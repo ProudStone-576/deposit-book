@@ -1,0 +1,43 @@
+{
+  "name": "deposit-book",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build && node scripts/postbuild.mjs",
+    "start": "node .next/standalone/server.js",
+    "lint": "eslint",
+    "db:migrate": "prisma migrate dev",
+    "db:reset": "prisma migrate reset --force",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "typecheck": "tsc --noEmit",
+    "db:deploy": "prisma migrate deploy",
+    "db:backup": "tsx scripts/backup.ts",
+    "verify": "tsx --env-file=.env scripts/verify.ts",
+    "start:dev-server": "next start"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "jose": "^6.2.9",
+    "next": "16.3.1",
+    "prisma": "^6.19.3",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
+    "tsx": "^4.23.12"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.1",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
+}

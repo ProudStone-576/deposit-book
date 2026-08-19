@@ -1,0 +1,278 @@
+"use server";
+
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { prisma } from "./db";
+import {
+  audit,
+  createSession,
+  destroySession,
+  getSession,
+  requireSession,
+  verifyPin,
+} from "./auth";
+import { parseDollarsToCents } from "./money";
+import { checkRate, clearRate, recordFailure } from "./ratelimit";
+import { headers } from "next/headers";
+import { addDays, isYmd, todayYmd, ymdInBusinessTz } from "./dates";
+
+export type ActionState = { error?: string; fieldErrors?: Record<string, string> };
+
+// ---------------------------------------------------------------- login
+
+// Eight wrong attempts inside ten minutes locks that source out for fifteen.
+// Generous for a manager fumbling a store number, useless for a script working
+// through a six-digit Company Admin PIN.
+const LOGIN_LIMIT = { limit: 8, windowMs: 10 * 60_000, lockMs: 15 * 60_000 };
+
+async function clientIp(): Promise<string> {
+  const h = await headers();
+  const fwd = h.get("x-forwarded-for");
+  if (fwd) return fwd.split(",")[0].trim();
+  return h.get("x-real-ip") ?? "unknown";
+}
+
+export async function loginAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const code = String(formData.get("loginCode") ?? "").trim().toUpperCase();
+  const pin = String(formData.get("pin") ?? "").trim();
+
+  if (!code) return { error: "Enter your store number." };
+
+  // Throttle by source address and by the code being tried, so neither a single
+  // machine nor a distributed run at one account gets unlimited guesses.
+  const ip = await clientIp();
+  const ipKey = `login:ip:${ip}`;
+  const codeKey = `login:code:${code}`;
+
+  for (const key of [ipKey, codeKey]) {
+    const verdict = checkRate(key, LOGIN_LIMIT);
+    if (!verdict.ok) {
+      await audit({
+        userId: null,
+        userName: `blocked (${code})`,
+        action: "LOGIN_BLOCKED",
+        detail: { code, ip, retryAfterSeconds: verdict.retryAfterSeconds },
+      });
+      const mins = Math.ceil(verdict.retryAfterSeconds / 60);
+      return {
+        error: `Too many attempts. Try again in ${mins} minute${mins === 1 ? "" : "s"}.`,
+      };
+    }
+  }
+
+  const fail = async (message: string): Promise<ActionState> => {
+    recordFailure(ipKey, LOGIN_LIMIT.windowMs);
+    recordFailure(codeKey, LOGIN_LIMIT.windowMs);
+    return { error: message };
+  };
+
+  let user = await prisma.user.findUnique({
+    where: { loginCode: code },
+    include: { store: true },
+  });
+
+  // Two store numbers begin with a zero. If someone types "2627", try "02627"
+  // rather than telling them their own store number is wrong.
+  if (!user && /^\d{1,5}$/.test(code)) {
+    user = await prisma.user.findUnique({
+      where: { loginCode: code.padStart(5, "0") },
+      include: { store: true },
+    });
+  }
+
+  if (!user || !user.active) {
+    await audit({
+      userId: null,
+      userName: `unknown (${code})`,
+      action: "LOGIN_FAILED",
+      detail: { code, ip },
+    });
+    return fail("That store number is not recognised.");
+  }
+
+  // Managers sign in with the store number alone. The Company Admin still needs
+  // a PIN, because that account can see every store's numbers.
+  if (user.pinHash) {
+    if (!pin) return { error: "Enter your PIN." };
+    if (!verifyPin(pin, user.pinHash)) {
+      await audit({
+        userId: user.id,
+        userName: user.name,
+        action: "LOGIN_FAILED",
+        detail: { code, ip, reason: "bad pin" },
+      });
+      return fail("Store number or PIN is not correct.");
+    }
+  }
+
+  clearRate(ipKey);
+  clearRate(codeKey);
+
+  await createSession({
+    userId: user.id,
+    name: user.name,
+    role: user.role as "MANAGER" | "OWNER",
+    storeId: user.storeId,
+    storeNumber: user.store?.storeNumber ?? null,
+    storeName: user.store?.name ?? null,
+  });
+  await audit({ userId: user.id, userName: user.name, action: "LOGIN" });
+
+  redirect(user.role === "OWNER" ? "/owner" : "/dashboard");
+}
+
+export async function logoutAction(): Promise<void> {
+  const s = await getSession();
+  if (s) await audit({ userId: s.userId, userName: s.name, action: "LOGOUT" });
+  await destroySession();
+  redirect("/login");
+}
+
+// ------------------------------------------------------------- deposits
+
+const MAX_BACKDATE_DAYS = 45;
+
+export async function createDepositAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const session = await requireSession();
+  if (session.role !== "MANAGER" || !session.storeId) {
+    return { error: "Only a store manager can file a deposit." };
+  }
+  const storeId = session.storeId;
+
+  // ---- business date ----
+  const businessDate = String(formData.get("businessDate") ?? "");
+  if (!isYmd(businessDate)) return { error: "Pick a valid deposit date." };
+  const today = todayYmd();
+  if (businessDate > today) {
+    return { error: "You cannot file a deposit for a future date." };
+  }
+  if (businessDate < addDays(today, -MAX_BACKDATE_DAYS)) {
+    return {
+      error: `That date is more than ${MAX_BACKDATE_DAYS} days ago. Ask the Company Admin to enter it.`,
+    };
+  }
+
+  // ---- the amount ----
+  const totalCents = parseDollarsToCents(String(formData.get("amount") ?? ""));
+  if (totalCents === null) {
+    return {
+      error: "Enter the deposit amount in dollars and cents, e.g. 1450.75",
+      fieldErrors: { amount: "Not a valid amount" },
+    };
+  }
+  if (totalCents <= 0) return { error: "A deposit cannot be zero." };
+
+  // ---- re-key confirmation: the manager types the amount again ----
+  const confirmCents = parseDollarsToCents(String(formData.get("confirmTotal") ?? ""));
+  if (confirmCents === null) {
+    return {
+      error: "Type the amount again to confirm it.",
+      fieldErrors: { confirmTotal: "Required" },
+    };
+  }
+  if (confirmCents !== totalCents) {
+    return {
+      error: "The two amounts do not match. Check the deposit slip before filing.",
+      fieldErrors: { confirmTotal: "Does not match" },
+    };
+  }
+
+  // ---- duplicate guard ----
+  const existing = await prisma.deposit.findFirst({
+    where: { storeId, businessDate, status: "ACTIVE" },
+  });
+  const acknowledgedExtra = formData.get("allowSecond") === "on";
+  if (existing && !acknowledgedExtra) {
+    return {
+      error:
+        "This date already has a deposit. Tick “additional deposit” if this is a second drop, or void the first one.",
+    };
+  }
+
+  const deposit = await prisma.deposit.create({
+    data: {
+      storeId,
+      businessDate,
+      totalCents,
+      bagNumber: String(formData.get("bagNumber") ?? "").trim() || null,
+      note: String(formData.get("note") ?? "").trim() || null,
+      enteredById: session.userId,
+    },
+  });
+
+  await audit({
+    userId: session.userId,
+    userName: session.name,
+    action: "DEPOSIT_CREATE",
+    entity: "Deposit",
+    entityId: deposit.id,
+    detail: { storeId, businessDate, totalCents },
+  });
+
+  revalidatePath("/dashboard");
+  revalidatePath("/owner");
+  redirect(`/deposit/${deposit.id}?filed=1`);
+}
+
+export async function voidDepositAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const session = await requireSession();
+  const id = Number(formData.get("depositId"));
+  const reason = String(formData.get("reason") ?? "").trim();
+
+  if (!Number.isInteger(id)) return { error: "Bad deposit id." };
+  if (reason.length < 5) return { error: "Give a reason (at least 5 characters)." };
+
+  const deposit = await prisma.deposit.findUnique({ where: { id } });
+  if (!deposit) return { error: "Deposit not found." };
+  if (deposit.status === "VOIDED") return { error: "Already voided." };
+
+  if (session.role === "MANAGER") {
+    if (deposit.storeId !== session.storeId) {
+      await audit({
+        userId: session.userId,
+        userName: session.name,
+        action: "VIEW_DENIED",
+        entity: "Deposit",
+        entityId: id,
+      });
+      return { error: "Not your store." };
+    }
+    // A manager can only undo their own slip on the same day they entered it.
+    if (ymdInBusinessTz(deposit.createdAt) !== todayYmd()) {
+      return { error: "Past today, only the Company Admin can void a deposit. Call the office." };
+    }
+  }
+
+  await prisma.deposit.update({
+    where: { id },
+    data: {
+      status: "VOIDED",
+      voidedById: session.userId,
+      voidedAt: new Date(),
+      voidReason: reason,
+    },
+  });
+
+  await audit({
+    userId: session.userId,
+    userName: session.name,
+    action: "DEPOSIT_VOID",
+    entity: "Deposit",
+    entityId: id,
+    detail: { reason, totalCents: deposit.totalCents, businessDate: deposit.businessDate },
+  });
+
+  revalidatePath("/dashboard");
+  revalidatePath("/owner");
+  revalidatePath(`/deposit/${id}`);
+  return {};
+}

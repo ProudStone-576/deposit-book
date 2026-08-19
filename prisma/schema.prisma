@@ -1,0 +1,96 @@
+// Deposit System - 13 stores / 3 cities / 1 owner
+// Money is ALWAYS stored as integer cents. Never floats.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Store {
+  id          Int      @id @default(autoincrement())
+  /// Text, not a number: these carry leading zeros ("02627") that must survive.
+  storeNumber String   @unique // what the manager types to sign in
+  name        String
+  city        String
+  address     String?
+  active      Boolean  @default(true)
+  // Deposits are expected on these weekdays (0=Sun .. 6=Sat), CSV of ints.
+  // A day not in this list is never flagged as "missed". Every day by default.
+  depositDays String   @default("0,1,2,3,4,5,6")
+  /// First day this store is on the system, "YYYY-MM-DD". Days before it are
+  /// never flagged as missed, so a new store does not open to a wall of red.
+  startDate   String?
+  createdAt   DateTime @default(now())
+
+  users    User[]
+  deposits Deposit[]
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  role      String // "MANAGER" | "OWNER"
+  loginCode String   @unique // manager: store number as text. owner: e.g. "OWNER"
+  /// Only the owner has a PIN. Managers sign in with their store number alone.
+  pinHash   String?
+  storeId   Int? // null for the owner
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  store          Store?     @relation(fields: [storeId], references: [id])
+  depositsFiled  Deposit[]  @relation("EnteredBy")
+  depositsVoided Deposit[]  @relation("VoidedBy")
+  auditLogs      AuditLog[]
+
+  @@index([storeId])
+}
+
+model Deposit {
+  id      Int    @id @default(autoincrement())
+  storeId Int
+
+  /// The business day the money belongs to. Stored "YYYY-MM-DD" (local, no TZ drift).
+  businessDate String
+
+  /// The single amount that went into the bag, in integer cents.
+  totalCents Int
+
+  bagNumber String?
+  note      String?
+
+  status      String    @default("ACTIVE") // "ACTIVE" | "VOIDED"
+  enteredById Int
+  createdAt   DateTime  @default(now())
+  voidedById  Int?
+  voidedAt    DateTime?
+  voidReason  String?
+
+  /// When this deposit was filed to replace a voided one.
+  correctsId Int?
+
+  store     Store @relation(fields: [storeId], references: [id])
+  enteredBy User  @relation("EnteredBy", fields: [enteredById], references: [id])
+  voidedBy  User? @relation("VoidedBy", fields: [voidedById], references: [id])
+
+  @@index([storeId, businessDate])
+  @@index([businessDate])
+}
+
+model AuditLog {
+  id       Int      @id @default(autoincrement())
+  at       DateTime @default(now())
+  userId   Int?
+  userName String
+  action   String // LOGIN, LOGIN_FAILED, LOGOUT, DEPOSIT_CREATE, DEPOSIT_VOID, VIEW_DENIED
+  entity   String? // "Deposit" | "Store"
+  entityId Int?
+  detail   String? // JSON blob
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([at])
+}

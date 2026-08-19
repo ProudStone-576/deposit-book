@@ -1,0 +1,19 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    # Bound to localhost: put a TLS-terminating reverse proxy in front.
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      DATABASE_URL: "file:/data/deposits.db"
+      SESSION_SECRET: "${SESSION_SECRET:?set SESSION_SECRET in .env}"
+      BUSINESS_TZ: "${BUSINESS_TZ:-America/Vancouver}"
+      TZ: "${BUSINESS_TZ:-America/Vancouver}"
+      BACKUP_DIR: "/data/backups"
+      BACKUP_KEEP: "30"
+    volumes:
+      - deposits:/data
+
+volumes:
+  deposits:
