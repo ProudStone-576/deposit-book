@@ -9,7 +9,7 @@
 import { SignJWT } from "jose";
 import { PrismaClient } from "@prisma/client";
 import { parseDollarsToCents, fmt } from "../lib/money";
-import { checkRate, recordFailure, resetAllRates } from "../lib/ratelimit";
+import { checkRate, recordFailure, clearRate } from "../lib/ratelimit";
 import {
   dayState,
   calendarGrid,
@@ -361,28 +361,42 @@ async function main() {
   );
 
   console.log("\n-- hardening --");
-  resetAllRates();
+  // The throttle must survive a cold start, so it is asserted against the
+  // database rather than a counter that dies with the process.
+  const probeKey = `verify:${Date.now()}`;
   const limit = { limit: 3, windowMs: 60_000, lockMs: 60_000 };
   let allowed = 0;
   for (let i = 0; i < 10; i++) {
-    if (checkRate("probe", limit).ok) {
+    if ((await checkRate(probeKey, limit)).ok) {
       allowed++;
-      recordFailure("probe", limit.windowMs);
+      await recordFailure(probeKey);
     }
   }
   check("rate limiter stops repeated attempts", allowed === 3, `allowed ${allowed}`);
-  const locked = checkRate("probe", limit);
+  const locked = await checkRate(probeKey, limit);
   check(
     "locked out attempts report a wait",
     !locked.ok && locked.retryAfterSeconds > 0,
   );
-  resetAllRates();
+  check(
+    "the throttle is stored, not in memory",
+    (await prisma.loginAttempt.count({ where: { key: probeKey } })) === 3,
+  );
+  await clearRate(probeKey);
+  check(
+    "a success clears the throttle",
+    (await prisma.loginAttempt.count({ where: { key: probeKey } })) === 0,
+  );
 
   const secret = process.env.SESSION_SECRET ?? "";
   check("SESSION_SECRET is at least 32 chars", secret.length >= 32, `${secret.length} chars`);
   check(
     "SESSION_SECRET is not the shipped placeholder",
     !secret.startsWith("dev-only-change-me"),
+  );
+  check(
+    "the app connects through the pooled endpoint",
+    /-pooler\./.test(process.env.DATABASE_URL ?? ""),
   );
 
   const headRes = await fetch(BASE + "/login");
@@ -399,34 +413,19 @@ async function main() {
     (headRes.headers.get("cache-control") ?? "").includes("no-store"),
   );
 
-  // A backup that has never been opened is a hope, not a backup.
-  const { runBackup } = await import("../lib/backup");
-  const { unlinkSync } = await import("node:fs");
-  try {
-    const b = await runBackup(prisma);
-    check("backup produces a verified copy", b.bytes > 0, `${b.bytes} bytes`);
-    const probe = new PrismaClient({
-      datasources: { db: { url: (await import("../lib/backup")).fileUrl(b.file) } },
-    });
-    const restoredCount = await probe.deposit.count();
-    await probe.$disconnect();
-    check(
-      "the backup can be reopened and read",
-      restoredCount === (await prisma.deposit.count()),
-      `${restoredCount} in copy`,
-    );
-    unlinkSync(b.file);
-  } catch (e) {
-    check("backup produces a verified copy", false, (e as Error).message);
-  }
-
-  const journal = await prisma.$queryRawUnsafe<{ journal_mode: string }[]>(
-    "PRAGMA journal_mode",
-  );
+  // The off-provider copy has to be downloadable, and only by the admin.
+  const exportAnon = await get("/owner/export");
+  check("CSV export refuses anonymous callers", exportAnon.status >= 300);
+  const exportMgr = await get("/owner/export", jwt101);
+  check("CSV export refuses a store manager", exportMgr.status >= 300);
+  const exportRes = await fetch(BASE + "/owner/export", {
+    headers: { cookie: `ds_session=${jwtOwner}` },
+  });
+  const csv = await exportRes.text();
+  check("Company Admin can download the CSV", exportRes.status === 200);
   check(
-    "database runs in WAL mode",
-    journal?.[0]?.journal_mode?.toLowerCase() === "wal",
-    journal?.[0]?.journal_mode,
+    "the CSV carries the cents, not just a formatted amount",
+    csv.split("\n")[0].includes("amount_cents"),
   );
 
   console.log("\n-- shell and branding --");

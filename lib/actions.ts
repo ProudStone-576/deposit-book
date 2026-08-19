@@ -12,7 +12,7 @@ import {
   verifyPin,
 } from "./auth";
 import { parseDollarsToCents } from "./money";
-import { checkRate, clearRate, recordFailure } from "./ratelimit";
+import { checkRate, clearRate, recordFailure, pruneOldAttempts } from "./ratelimit";
 import { headers } from "next/headers";
 import { addDays, isYmd, todayYmd, ymdInBusinessTz } from "./dates";
 
@@ -48,7 +48,7 @@ export async function loginAction(
   const codeKey = `login:code:${code}`;
 
   for (const key of [ipKey, codeKey]) {
-    const verdict = checkRate(key, LOGIN_LIMIT);
+    const verdict = await checkRate(key, LOGIN_LIMIT);
     if (!verdict.ok) {
       await audit({
         userId: null,
@@ -64,8 +64,8 @@ export async function loginAction(
   }
 
   const fail = async (message: string): Promise<ActionState> => {
-    recordFailure(ipKey, LOGIN_LIMIT.windowMs);
-    recordFailure(codeKey, LOGIN_LIMIT.windowMs);
+    await recordFailure(ipKey);
+    await recordFailure(codeKey);
     return { error: message };
   };
 
@@ -108,8 +108,10 @@ export async function loginAction(
     }
   }
 
-  clearRate(ipKey);
-  clearRate(codeKey);
+  await clearRate(ipKey);
+  await clearRate(codeKey);
+  // Opportunistic cleanup; cheap, and needs no scheduler.
+  void pruneOldAttempts().catch(() => {});
 
   await createSession({
     userId: user.id,

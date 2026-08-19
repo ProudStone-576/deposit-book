@@ -48,7 +48,8 @@ prisma/dev.db-journal
 *.db-shm
 *.replaced-*
 
-# backups
+# exports (contain every figure)
+exports/
 backups/
 
 # keep the template, never the real file

@@ -1,69 +1,56 @@
+import { prisma } from "./db";
+
 /**
- * In-memory rate limiter for sign-in attempts.
+ * Sign-in throttling, recorded in the database.
  *
- * This app is deployed as a single long-running Node process, so a Map is the
- * whole story — no Redis, nothing to operate. If it is ever run as more than
- * one process, this becomes per-process and needs a shared store.
+ * This used to be a Map in memory. That works for one long-running server and
+ * is worthless on serverless, where each request may land in a fresh process
+ * with an empty map — an attacker gets unlimited guesses simply by being spread
+ * across instances. The counter has to live where every instance can see it.
  */
-
-type Bucket = { hits: number[]; lockedUntil: number };
-
-const buckets = new Map<string, Bucket>();
-
-// Stop the map growing without bound on a long-lived process.
-const MAX_KEYS = 5000;
 
 export type RateVerdict =
   | { ok: true }
   | { ok: false; retryAfterSeconds: number };
 
-export function checkRate(
+export async function checkRate(
   key: string,
   opts: { limit: number; windowMs: number; lockMs: number },
-): RateVerdict {
+): Promise<RateVerdict> {
   const now = Date.now();
-  const bucket = buckets.get(key) ?? { hits: [], lockedUntil: 0 };
+  const windowStart = new Date(now - opts.windowMs);
 
-  if (bucket.lockedUntil > now) {
-    return {
-      ok: false,
-      retryAfterSeconds: Math.ceil((bucket.lockedUntil - now) / 1000),
-    };
-  }
+  const failures = await prisma.loginAttempt.findMany({
+    where: { key, success: false, at: { gte: windowStart } },
+    orderBy: { at: "desc" },
+    select: { at: true },
+  });
 
-  bucket.hits = bucket.hits.filter((t) => now - t < opts.windowMs);
-  if (bucket.hits.length >= opts.limit) {
-    bucket.lockedUntil = now + opts.lockMs;
-    bucket.hits = [];
-    buckets.set(key, bucket);
-    return { ok: false, retryAfterSeconds: Math.ceil(opts.lockMs / 1000) };
-  }
+  if (failures.length < opts.limit) return { ok: true };
 
-  return { ok: true };
+  // Locked from the moment of the attempt that crossed the line.
+  const trigger = failures[opts.limit - 1].at.getTime();
+  const until = trigger + opts.lockMs;
+  if (until <= now) return { ok: true };
+
+  return { ok: false, retryAfterSeconds: Math.ceil((until - now) / 1000) };
 }
 
-/** Call on a failed attempt. Successes should never count against the limit. */
-export function recordFailure(key: string, windowMs: number): void {
-  const now = Date.now();
-  const bucket = buckets.get(key) ?? { hits: [], lockedUntil: 0 };
-  bucket.hits = bucket.hits.filter((t) => now - t < windowMs);
-  bucket.hits.push(now);
-  buckets.set(key, bucket);
-
-  if (buckets.size > MAX_KEYS) {
-    for (const [k, b] of buckets) {
-      if (b.lockedUntil < now && b.hits.length === 0) buckets.delete(k);
-      if (buckets.size <= MAX_KEYS) break;
-    }
-  }
+export async function recordFailure(key: string): Promise<void> {
+  await prisma.loginAttempt.create({ data: { key, success: false } });
 }
 
-/** Call on success, so a manager who mistypes twice is not punished later. */
-export function clearRate(key: string): void {
-  buckets.delete(key);
+/** A success clears the slate, so a manager who mistypes is not punished later. */
+export async function clearRate(key: string): Promise<void> {
+  await prisma.loginAttempt.deleteMany({ where: { key } });
 }
 
-/** Test seam. */
-export function resetAllRates(): void {
-  buckets.clear();
+/**
+ * Housekeeping. Called opportunistically on sign-in rather than on a schedule,
+ * so it needs no cron and cannot silently stop running.
+ */
+export async function pruneOldAttempts(olderThanMs = 24 * 60 * 60 * 1000): Promise<void> {
+  await prisma.loginAttempt.deleteMany({
+    where: { at: { lt: new Date(Date.now() - olderThanMs) } },
+  });
 }

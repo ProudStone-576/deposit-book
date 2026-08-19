@@ -1,4 +1,4 @@
-// Deposit System - 13 stores / 3 cities / 1 owner
+// Deposit Book — 13 stores across 6 cities, one Company Admin.
 // Money is ALWAYS stored as integer cents. Never floats.
 
 generator client {
@@ -6,8 +6,12 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // Pooled connection for the app: serverless functions open many short-lived
+  // connections and Postgres will not tolerate that without a pooler.
+  url       = env("DATABASE_URL")
+  // Migrations need a direct connection; they cannot run through the pooler.
+  directUrl = env("DIRECT_URL")
 }
 
 model Store {
@@ -93,4 +97,16 @@ model AuditLog {
   user User? @relation(fields: [userId], references: [id])
 
   @@index([at])
+}
+
+/// Sign-in attempts, kept so throttling works across serverless instances.
+/// An in-memory counter is useless when every request may hit a fresh process.
+model LoginAttempt {
+  id      Int      @id @default(autoincrement())
+  /// "ip:1.2.3.4" or "code:69910" — throttled independently.
+  key     String
+  at      DateTime @default(now())
+  success Boolean  @default(false)
+
+  @@index([key, at])
 }

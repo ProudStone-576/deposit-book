@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build && node scripts/postbuild.mjs",
-    "start": "node .next/standalone/server.js",
+    "build": "prisma generate && next build",
+    "start": "next start",
     "lint": "eslint",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset --force",
@@ -13,10 +13,8 @@
     "db:studio": "prisma studio",
     "typecheck": "tsc --noEmit",
     "db:deploy": "prisma migrate deploy",
-    "db:backup": "tsx --env-file=.env scripts/backup.ts",
     "verify": "tsx --env-file=.env scripts/verify.ts",
-    "start:dev-server": "next start",
-    "db:restore": "tsx --env-file=.env scripts/restore.ts"
+    "db:export": "tsx --env-file=.env scripts/export.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

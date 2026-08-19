@@ -5,9 +5,6 @@ const nextConfig: NextConfig = {
   // user's home directory.
   turbopack: { root: __dirname },
 
-  // Self-contained server bundle, so the container does not ship node_modules.
-  output: "standalone",
-
   poweredByHeader: false,
 
   async headers() {

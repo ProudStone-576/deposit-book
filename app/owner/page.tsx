@@ -8,7 +8,7 @@ import { MonthNav } from "@/components/MonthNav";
 import { OwnerCalendar } from "@/components/OwnerCalendar";
 import { Legend } from "@/components/Legend";
 import { Stat } from "@/components/Stat";
-import { BackupStatus } from "@/components/BackupStatus";
+import { DataProtection } from "@/components/DataProtection";
 
 export default async function OwnerPage({
   searchParams,
@@ -39,7 +39,6 @@ export default async function OwnerPage({
         }
       />
 
-      <BackupStatus />
 
       {summary.missing > 0 && (
         <a href="#by-city" className="notice notice-miss block">
@@ -70,6 +69,8 @@ export default async function OwnerPage({
           </div>
         </div>
       </section>
+
+      <DataProtection />
 
       <section id="by-city" className="space-y-3 pt-1">
         <h2 className="text-base font-extrabold tracking-[-0.01em]">By city</h2>

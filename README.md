@@ -12,9 +12,10 @@ Built by [Aethon Core](https://aethoncore.com).
 
 ```bash
 npm install
-npm run db:migrate      # creates prisma/dev.db
-npm run db:seed         # 13 stores + Company Admin. No deposits: the books start empty.
-npm run dev             # http://localhost:3000
+cp .env.example .env     # fill in DATABASE_URL, DIRECT_URL, SESSION_SECRET
+npm run db:deploy        # apply migrations
+npm run db:seed          # 13 stores + Company Admin; prints the PIN
+npm run dev              # http://localhost:3000
 ```
 
 Sign-in:
@@ -24,9 +25,9 @@ Sign-in:
 | Store manager | their store number | none |
 | Company Admin | Company Admin tab | `ADMIN_PIN` |
 
-The Company Admin PIN is set by `ADMIN_PIN` at seed time (`OWNER_PIN` is still
-honoured). If neither is set the seed generates one and prints it once — write
-it down, it is stored only as a hash.
+The Company Admin PIN is set by `ADMIN_PIN` at seed time. If it is unset the
+seed generates one and prints it once — write it down, it is stored only as a
+hash.
 
 Store numbers are **text, not integers** — `02627` and `02631` carry a leading
 zero that an integer column would silently drop. A manager who types `2627`
@@ -60,8 +61,7 @@ are never flagged as missed, so going live does not paint the calendar red.
 ### Re-seeding
 
 `npm run db:seed` **erases the books**. Once real deposits exist it refuses to
-run and tells you so; `FORCE_RESEED=1` overrides it. Back up `prisma/dev.db`
-first.
+run and tells you so; `FORCE_RESEED=1` overrides it.
 
 ## The calendar
 
@@ -125,7 +125,7 @@ npm run dev            # in one terminal
 npx tsx --env-file=.env scripts/verify.ts
 ```
 
-67 checks covering the arithmetic, the calendar states, stored-data integrity
+71 checks covering the arithmetic, the calendar states, stored-data integrity
 (every stored amount is still a positive whole number of cents), and
 cross-store access — a manager for store 101 cannot open store 102's deposit,
 cannot reach the admin pages, and a forged cookie is rejected. The last group
@@ -159,117 +159,77 @@ prisma/
   seed.ts        the 13 stores, their managers, and the Company Admin
 ```
 
-## Deploying
+## Deploying (Vercel + Neon)
 
-The app is a single long-running Node process with a SQLite file beside it.
-That is a deliberate fit for 13 stores filing one figure a day — there is no
-database server to run and the whole book is one file you can copy.
+The app runs on Vercel with Postgres on Neon. There is no server to run and
+TLS is handled for you.
 
-**It must not go on Vercel, Netlify or Lambda.** Those wipe the filesystem
-between invocations and the deposits go with it. Use a small VM or any host
-that runs a container with a volume.
+**It cannot run on Vercel with a file database.** Vercel's filesystem is
+per-invocation and discarded, so a SQLite file would be recreated empty on
+every cold start and each deposit would quietly disappear. That is why the
+datasource is Postgres.
 
-### Docker (recommended)
+### One-time setup
 
-```bash
-cp .env.example .env
-node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
-#   paste into SESSION_SECRET in .env, set BUSINESS_TZ
+1. **Database** — create a Neon project. Take two connection strings from the
+   dashboard: the pooled one (contains `-pooler`) and the direct one (same
+   without it).
 
-docker compose up -d --build          # migrates on start, then serves :3000
-docker compose exec app npx tsx prisma/seed.ts    # once, prints the Company Admin PIN
-```
+2. **Import the repo** into Vercel (New Project → pick `deposit-book`). The
+   defaults are correct; `npm run build` already runs `prisma generate`.
 
-The database lives on the `deposits` volume at `/data/deposits.db`. The app
-binds to `127.0.0.1:3000`, so put a TLS-terminating proxy in front of it.
+3. **Environment variables** in Vercel → Settings → Environment Variables, for
+   Production *and* Preview:
 
-### Without Docker
+   | Name | Value |
+   | --- | --- |
+   | `DATABASE_URL` | Neon **pooled** string |
+   | `DIRECT_URL` | Neon **direct** string |
+   | `SESSION_SECRET` | `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"` |
+   | `BUSINESS_TZ` | `America/Vancouver` |
 
-```bash
-npm ci
-npm run build
-npm run db:deploy        # apply migrations
-npm run db:seed          # once, prints the Company Admin PIN
-NODE_ENV=production npm run start
-```
+   The app refuses to start if any of these are missing, if the secret is too
+   short, or if `DATABASE_URL` is not the pooled endpoint.
 
-### TLS is not optional
+4. **Schema and stores**, once, from your machine with the same values in
+   `.env`:
 
-The session cookie is issued with `secure`, so over plain HTTP the browser
-discards it and sign-in appears to do nothing. Terminate TLS at Caddy, nginx or
-Cloudflare and forward to port 3000. Caddy needs three lines and gets a
-certificate itself:
+   ```bash
+   npm run db:deploy     # create the tables
+   ADMIN_PIN=... npm run db:seed
+   ```
 
-```
-deposits.example.com {
-    reverse_proxy 127.0.0.1:3000
-}
-```
+5. **Deploy.** Vercel gives you `*.vercel.app` with TLS immediately; add your
+   own domain in Settings → Domains when ready.
 
-Forward `X-Forwarded-For`; the login throttle uses it to identify a caller.
+### Protecting the records
 
-### Backups and recovery
+**Neon keeps continuous point-in-time restore.** You can rewind the database to
+any moment inside the retention window from the Neon dashboard — that covers a
+bad query, a wrong bulk edit, or anything we get wrong. Check the retention
+period on your plan and raise it if it is short; it is the main safety net.
 
-The app backs itself up. There is no cron job to forget and no command anyone
-has to remember.
-
-- A copy is taken ~30s after every start and then every `BACKUP_INTERVAL_HOURS`
-  (default 6).
-- Each copy is made with `VACUUM INTO`, so it is a consistent snapshot taken
-  while the app keeps serving.
-- Each copy is then **opened and checked** with `PRAGMA integrity_check` and a
-  read of the deposits table. A copy that fails is deleted rather than left
-  looking healthy.
-- The newest `BACKUP_KEEP` (default 30) are kept.
-- The Company Admin sees the time of the last successful copy on their
-  overview, and a red banner if it is overdue or failing.
-
-**Set `BACKUP_MIRROR_DIR`.** A backup on the same disk as the database does not
-survive the failure that destroys the database. Point it at a second volume, a
-mounted share, or a synced folder so a copy leaves the machine — for example
-`C:/Users/<you>/OneDrive/DepositBook-Backups` on Windows. Anything with access
-to that folder can read every deposit, so treat it as the books.
-
-Paths must be **absolute**. In a standalone build the server's working
-directory is inside `.next/`, so a relative `BACKUP_DIR` would write backups
-into the build output where the next deploy deletes them. The app refuses to
-start in production if these are relative.
-
-Manual copy, any time:
+**Take your own copy too.** Point-in-time restore lives inside Neon, so it does
+not survive losing the Neon account. The Company Admin can download the whole
+book as CSV from the overview page ("Download CSV"), and the same thing runs
+from a terminal:
 
 ```bash
-npm run db:backup
+npm run db:export           # ./exports/deposit-book-YYYY-MM-DD.csv
 ```
 
-Restoring — **stop the app first**:
-
-```bash
-npm run db:restore                            # list copies, with their contents
-npm run db:restore -- <file> --yes            # replace the live database
-```
-
-The restore refuses a file that fails its integrity check, prints what it is
-about to replace and with what, and copies the current database aside before
-overwriting — so restoring the wrong file is itself recoverable.
-
-In WAL mode the database is three files (`dev.db`, `-wal`, `-shm`). The restore
-moves all three aside and then clears the sidecars, because a stale `-wal` left
-next to a restored file gets replayed on top of it: the restore looks like it
-worked and quietly gives you the wrong book. Overwriting a database while the
-server still has it open will corrupt it, hence stopping the app.
-
-### Durability
-
-SQLite runs in **WAL** mode with `synchronous=FULL`. A deposit is on disk
-before the manager is told it filed, and a crash or power cut rolls back the
-partial transaction instead of tearing the file.
+The CSV carries `amount_cents` alongside the formatted amount, so it can be
+re-imported without a rounding argument. Do this monthly and keep it somewhere
+that is not Neon. Exports contain every figure for every store — treat the file
+as the books.
 
 ### Configuration
 
 The server refuses to start if `SESSION_SECRET` is missing, too short, or still
-the placeholder, if `DATABASE_URL` is unset, or if `BUSINESS_TZ` names a
-timezone it does not recognise. That check is deliberate: a deposit system that
-boots with a forgeable signing key is worse than one that will not boot.
+a placeholder; if `DATABASE_URL` is absent, not a Postgres url, or not the
+pooled endpoint in production; if `DIRECT_URL` is missing; or if `BUSINESS_TZ`
+names a timezone it does not recognise. A deposit system that boots with a
+forgeable signing key is worse than one that will not boot.
 
 ## Still open
 
@@ -278,8 +238,8 @@ None of these block going live, but the Company Admin should know:
 - **Store-number-only sign-in.** Store numbers appear on receipts and signage,
   so anyone holding one can file deposits for that store and read its history.
   A short per-store PIN would close it — roughly an hour of work.
-- **Login throttling is per-process.** Fine for one server; if the app is ever
-  run behind more than one instance, the limiter needs a shared store.
+- **Serverless cold starts** add a second or two to the first request after a
+  quiet period. Harmless for a once-a-day deposit.
 - **Managing stores and staff** happens through `prisma/seed.ts`. There is no
   admin screen for adding or renaming a store.
 - **No CSV export.** The Company Admin can read every figure on screen but cannot

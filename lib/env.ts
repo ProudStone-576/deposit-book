@@ -1,5 +1,4 @@
 import "server-only";
-import path from "node:path";
 
 /**
  * Configuration is checked once, loudly, at boot. A deposit system that starts
@@ -40,27 +39,19 @@ export function assertProductionConfig(): void {
   const dbUrl = process.env.DATABASE_URL;
   if (!dbUrl) {
     problems.push("DATABASE_URL is not set.");
-  } else if (isProd && /^file:(?![/\]|[A-Za-z]:)/.test(dbUrl)) {
+  } else if (!/^postgres(ql)?:\/\//.test(dbUrl)) {
+    problems.push(`DATABASE_URL must be a postgres:// url, got "${dbUrl.split(":")[0]}:".`);
+  } else if (isProd && !/-pooler\./.test(dbUrl)) {
+    // Serverless opens a connection per invocation; direct Postgres runs out
+    // of connections long before it runs out of traffic.
     problems.push(
-      `DATABASE_URL "${dbUrl}" is a relative path. In production the server's ` +
-        "working directory is not the project root, so a relative path can " +
-        "silently point at the wrong file. Use an absolute one.",
+      "DATABASE_URL is not the pooled endpoint. On serverless this exhausts " +
+        "Postgres connections. Use the connection string containing '-pooler'.",
     );
   }
 
-  // A relative backup directory resolves against the server's working
-  // directory, which for a standalone build is inside .next/. Backups written
-  // there are destroyed by the next build, without anyone noticing.
-  const backupDir = process.env.BACKUP_DIR;
-  if (isProd && backupDir && !path.isAbsolute(backupDir)) {
-    problems.push(
-      `BACKUP_DIR "${backupDir}" is relative. Use an absolute path so backups ` +
-        "cannot land inside the build output and be deleted by a deploy.",
-    );
-  }
-  const mirrorDir = process.env.BACKUP_MIRROR_DIR;
-  if (isProd && mirrorDir && !path.isAbsolute(mirrorDir)) {
-    problems.push(`BACKUP_MIRROR_DIR "${mirrorDir}" is relative. Use an absolute path.`);
+  if (!process.env.DIRECT_URL) {
+    problems.push("DIRECT_URL is not set. Migrations cannot run through the pooler.");
   }
 
   const tz = process.env.BUSINESS_TZ;

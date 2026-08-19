@@ -1,9 +1,0 @@
-node_modules
-.next
-.git
-backups
-*.db
-*.db-journal
-.env
-.env.*
-!.env.example
