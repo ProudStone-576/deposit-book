@@ -50,8 +50,14 @@ export function assertProductionConfig(): void {
     );
   }
 
+  // DIRECT_URL is only read by `prisma migrate`, which runs from a developer
+  // machine or CI — never by the serving app. Missing here is worth saying out
+  // loud, but it is not a reason to refuse to serve deposits.
   if (!process.env.DIRECT_URL) {
-    problems.push("DIRECT_URL is not set. Migrations cannot run through the pooler.");
+    console.warn(
+      "[config] DIRECT_URL is not set. The app runs fine without it, but " +
+        "`prisma migrate` will not, because migrations cannot use the pooler.",
+    );
   }
 
   const tz = process.env.BUSINESS_TZ;

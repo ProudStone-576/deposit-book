@@ -1,10 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { assertProductionConfig } from "@/lib/env";
-
-// Runs once when the server module is first evaluated.
-assertProductionConfig();
-
 export const metadata: Metadata = {
   title: {
     default: "Deposit Book",
