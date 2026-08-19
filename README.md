@@ -226,8 +226,9 @@ has to remember.
 
 **Set `BACKUP_MIRROR_DIR`.** A backup on the same disk as the database does not
 survive the failure that destroys the database. Point it at a second volume, a
-mounted share, or a synced folder (OneDrive, Dropbox, rclone) so a copy leaves
-the machine.
+mounted share, or a synced folder so a copy leaves the machine — for example
+`C:/Users/<you>/OneDrive/DepositBook-Backups` on Windows. Anything with access
+to that folder can read every deposit, so treat it as the books.
 
 Paths must be **absolute**. In a standalone build the server's working
 directory is inside `.next/`, so a relative `BACKUP_DIR` would write backups
@@ -240,7 +241,7 @@ Manual copy, any time:
 npm run db:backup
 ```
 
-Restoring:
+Restoring — **stop the app first**:
 
 ```bash
 npm run db:restore                            # list copies, with their contents
@@ -249,8 +250,13 @@ npm run db:restore -- <file> --yes            # replace the live database
 
 The restore refuses a file that fails its integrity check, prints what it is
 about to replace and with what, and copies the current database aside before
-overwriting — so restoring the wrong file is itself recoverable. Restart the
-app afterwards.
+overwriting — so restoring the wrong file is itself recoverable.
+
+In WAL mode the database is three files (`dev.db`, `-wal`, `-shm`). The restore
+moves all three aside and then clears the sidecars, because a stale `-wal` left
+next to a restored file gets replayed on top of it: the restore looks like it
+worked and quietly gives you the wrong book. Overwriting a database while the
+server still has it open will corrupt it, hence stopping the app.
 
 ### Durability
 

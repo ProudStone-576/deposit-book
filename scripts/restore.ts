@@ -8,7 +8,7 @@
  * so a restore of the wrong file is itself recoverable.
  */
 import { PrismaClient } from "@prisma/client";
-import { copyFileSync, existsSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, statSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { listBackups, BACKUP_DIR, fileUrl } from "../lib/backup";
 
@@ -68,6 +68,10 @@ async function main() {
   const source = path.isAbsolute(chosen) ? chosen : path.join(BACKUP_DIR, chosen);
   if (!existsSync(source)) throw new Error(`No such backup: ${source}`);
 
+  console.log("");
+  console.log("  STOP THE APP BEFORE RESTORING. Overwriting a database that a");
+  console.log("  running server has open will corrupt it.");
+
   const info = await describe(source);
   if (info.integrity !== "ok") {
     throw new Error(`Refusing to restore: integrity check says "${info.integrity}".`);
@@ -90,18 +94,33 @@ async function main() {
     return;
   }
 
+  // In WAL mode the database is three files. Copying only the main one over
+  // leaves the old -wal beside it, and SQLite then replays those stale writes
+  // on top of the restored data — the restore appears to work and silently
+  // gives you the wrong book. Move all three aside, then clear the sidecars.
+  const sidecars = [`${live}-wal`, `${live}-shm`];
+  const stamp = Date.now();
+
   if (existsSync(live)) {
-    const safety = `${live}.replaced-${Date.now()}`;
-    copyFileSync(live, safety);
-    console.log(`  Current database copied to ${safety}`);
+    copyFileSync(live, `${live}.replaced-${stamp}`);
+    for (const f of sidecars) {
+      if (existsSync(f)) copyFileSync(f, `${f}.replaced-${stamp}`);
+    }
+    console.log(`  Current database copied aside as *.replaced-${stamp}`);
   }
 
   copyFileSync(source, live);
+  for (const f of sidecars) {
+    if (existsSync(f)) {
+      unlinkSync(f);
+      console.log(`  Removed stale ${path.basename(f)}`);
+    }
+  }
   console.log(`  Restored ${(statSync(live).size / 1024).toFixed(0)} KB.`);
 
   const after = await describe(live);
   console.log(`  Live database now holds ${after.deposits} deposits (integrity ${after.integrity}).`);
-  console.log("  Restart the app.");
+  console.log("  Start the app again.");
   console.log("");
 }
 
