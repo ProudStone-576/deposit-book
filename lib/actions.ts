@@ -280,31 +280,26 @@ export async function voidDepositAction(
 }
 
 /**
- * Permanently remove a deposit. Company Admin only.
+ * Permanently remove a deposit.
  *
  * Voiding is still the normal correction: it leaves the original figure on the
  * record where anyone can see what happened. Deleting takes the row out of the
  * books entirely — the calendar, the day totals and the month totals all change
  * as though it was never filed.
  *
- * Because of that, the whole deposit is copied into the audit log before it
- * goes. The row disappears; the evidence that it existed does not.
+ * The Company Admin can delete any deposit. A store manager gets the same
+ * window they already have for voiding: their own store, and only on the day
+ * the slip was entered. Past that the figure belongs to the month's books and
+ * the office has to make the call.
+ *
+ * Either way the whole deposit is copied into the audit log before it goes. The
+ * row disappears; the evidence that it existed does not.
  */
 export async function deleteDepositAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
   const session = await requireSession();
-  if (session.role !== "OWNER") {
-    await audit({
-      userId: session.userId,
-      userName: session.name,
-      action: "VIEW_DENIED",
-      entity: "Deposit",
-      detail: { attempted: "delete" },
-    });
-    return { error: "Only the Company Admin can delete a deposit." };
-  }
 
   const id = Number(formData.get("depositId"));
   const reason = String(formData.get("reason") ?? "").trim();
@@ -318,6 +313,36 @@ export async function deleteDepositAction(
     include: { store: true, enteredBy: true },
   });
   if (!deposit) return { error: "Deposit not found." };
+
+  const isOwner = session.role === "OWNER";
+
+  if (!isOwner) {
+    if (deposit.storeId !== session.storeId) {
+      await audit({
+        userId: session.userId,
+        userName: session.name,
+        action: "VIEW_DENIED",
+        entity: "Deposit",
+        entityId: id,
+        detail: { attempted: "delete", reason: "other store" },
+      });
+      return { error: "Not your store." };
+    }
+    if (ymdInBusinessTz(deposit.createdAt) !== todayYmd()) {
+      await audit({
+        userId: session.userId,
+        userName: session.name,
+        action: "VIEW_DENIED",
+        entity: "Deposit",
+        entityId: id,
+        detail: { attempted: "delete", reason: "past today" },
+      });
+      return {
+        error:
+          "Past today, only the Company Admin can delete a deposit. Call the office.",
+      };
+    }
+  }
 
   // Re-key the amount, the same guard used when filing it. Deleting the wrong
   // row is not recoverable from the app.
@@ -357,6 +382,13 @@ export async function deleteDepositAction(
   await prisma.deposit.delete({ where: { id } });
 
   revalidatePath("/dashboard");
+  revalidatePath(`/dashboard/${deposit.businessDate}`);
   revalidatePath("/owner");
-  redirect(`/owner/day/${deposit.businessDate}?deleted=1`);
+  revalidatePath(`/owner/day/${deposit.businessDate}`);
+
+  redirect(
+    isOwner
+      ? `/owner/day/${deposit.businessDate}?deleted=1`
+      : `/dashboard/${deposit.businessDate}?deleted=1`,
+  );
 }

@@ -9,11 +9,14 @@ import { DepositCard } from "@/components/DepositCard";
 
 export default async function ManagerDayPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ date: string }>;
+  searchParams: Promise<{ deleted?: string }>;
 }) {
   const session = await requireSession();
   const { date } = await params;
+  const { deleted } = await searchParams;
   if (!isYmd(date)) notFound();
   if (!session.storeId) notFound();
 
@@ -27,6 +30,13 @@ export default async function ManagerDayPage({
       <Link href={`/dashboard?month=${monthKey(date)}`} className="backlink">
         <span aria-hidden>‹</span> Calendar
       </Link>
+
+      {deleted === "1" && (
+        <p className="notice notice-miss">
+          Deposit deleted. A copy was written to the audit log before it was
+          removed.
+        </p>
+      )}
 
       <PageHead
         eyebrow={`Store ${session.storeNumber} · ${session.storeName}`}

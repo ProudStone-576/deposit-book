@@ -30,8 +30,11 @@ export default async function DepositDetailPage({
 
   const isOwner = session.role === "OWNER";
   const voided = deposit.status === "VOIDED";
-  const managerCanVoid =
+  // A manager can only change a slip on the day they entered it. That one
+  // window covers both corrections: void keeps the record, delete removes it.
+  const managerSameDay =
     !isOwner && ymdInBusinessTz(deposit.createdAt) === todayYmd();
+  const canCorrect = isOwner || managerSameDay;
 
   const backHref = isOwner
     ? `/owner/day/${deposit.businessDate}`
@@ -104,14 +107,14 @@ export default async function DepositDetailPage({
         </dl>
       </section>
 
-      {!voided && (isOwner || managerCanVoid) && <VoidForm depositId={deposit.id} />}
+      {!voided && canCorrect && <VoidForm depositId={deposit.id} />}
 
-      {isOwner && (
+      {canCorrect && (
         <div className="border-t border-line pt-4 text-center">
           <DeleteForm depositId={deposit.id} totalCents={deposit.totalCents} />
         </div>
       )}
-      {!voided && !isOwner && !managerCanVoid && (
+      {!voided && !canCorrect && (
         <p className="notice notice-quiet">
           This deposit was filed on an earlier day, so it can no longer be changed
           here. Contact the Company Admin if a correction is needed.

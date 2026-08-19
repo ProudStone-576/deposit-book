@@ -100,16 +100,17 @@ rather than by care:
 3. **The server re-parses the amount.** Whatever the browser shows is display
    only; `createDepositAction` parses and validates the submitted value itself
    and rejects anything ambiguous (`1.234`, `12,3`, letters, blank, zero).
-4. **A manager can never edit or delete.** A wrong deposit is *voided* with a
-   written reason; the original stays in the books and both records remain
-   visible. A manager can only void on the same day they filed; after that it
-   is the Company Admin's call.
-5. **Deleting is Company Admin only, and heavier than voiding.** It removes the
-   row from the books — calendar, day totals and month totals all change as
-   though it was never filed. It needs a written reason and the exact amount
-   re-keyed, and the whole deposit is copied into the audit log first, so the
-   figure stays recoverable from the trail even though the row is gone. Prefer
-   voiding: it leaves the correction visible.
+4. **A manager can never edit.** A wrong deposit is *voided* with a written
+   reason; the original stays in the books and both records remain visible. A
+   manager can only correct — void or delete — on the same day they filed, and
+   only for their own store; after that it is the Company Admin'''s call.
+5. **Deleting is heavier than voiding.** It removes the row from the books —
+   calendar, day totals and month totals all change as though it was never
+   filed. It needs a written reason and the exact amount re-keyed, and the whole
+   deposit is copied into the audit log first, so the figure stays recoverable
+   from the trail even though the row is gone. The Company Admin can delete any
+   deposit; a manager only within the same-day window in rule 4. Prefer voiding:
+   it leaves the correction visible.
 6. **Date guards.** No future dates, and nothing older than 45 days without the
    Company Admin. Business dates are stored as `YYYY-MM-DD` strings so no timezone can
    move money into the wrong day.
