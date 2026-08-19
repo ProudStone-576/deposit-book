@@ -25,6 +25,9 @@ export async function DataProtection() {
       <div className="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 py-3 text-xs text-ink2">
         <span>
           <b className="money text-ink">{s.deposits}</b> deposits on file
+          {s.voided > 0 && (
+            <span className="text-ink3"> &middot; {s.voided} voided</span>
+          )}
         </span>
         <span>
           <b className="money text-ink">{fmt(s.totalCents)}</b> recorded

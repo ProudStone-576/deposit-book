@@ -65,20 +65,25 @@ export async function depositsCsv(): Promise<string> {
 }
 
 export async function bookSummary() {
-  const [deposits, stores, active, newest] = await Promise.all([
-    prisma.deposit.count(),
+  // The count and the sum have to describe the same rows. Counting every
+  // deposit while summing only the active ones read as money gone missing.
+  const [deposits, voided, stores, active, newest] = await Promise.all([
+    prisma.deposit.count({ where: { status: "ACTIVE" } }),
+    prisma.deposit.count({ where: { status: "VOIDED" } }),
     prisma.store.count(),
     prisma.deposit.aggregate({
       where: { status: "ACTIVE" },
       _sum: { totalCents: true },
     }),
     prisma.deposit.findFirst({
+      where: { status: "ACTIVE" },
       orderBy: { businessDate: "desc" },
       select: { businessDate: true },
     }),
   ]);
   return {
     deposits,
+    voided,
     stores,
     totalCents: active._sum.totalCents ?? 0,
     latestDate: newest?.businessDate ?? null,

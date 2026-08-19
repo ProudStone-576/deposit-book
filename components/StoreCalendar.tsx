@@ -56,7 +56,7 @@ export function StoreCalendar({
                     ✓
                   </span>
                   <span className="money hidden text-[0.5625rem] font-semibold leading-none text-ok sm:block">
-                    {fmt(d.totalCents).replace(".00", "")}
+                    {fmt(d.totalCents)}
                   </span>
                 </>
               )}

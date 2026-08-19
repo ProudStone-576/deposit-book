@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { fmt } from "@/lib/money";
+import { stampInBusinessTz } from "@/lib/dates";
 
 type CardDeposit = {
   id: number;
@@ -39,10 +40,7 @@ export function DepositCard({ deposit }: { deposit: CardDeposit }) {
         </div>
         <div className="mt-0.5 truncate text-xs text-ink3">
           {deposit.enteredBy?.name ? `${deposit.enteredBy.name} · ` : ""}
-          {new Date(deposit.createdAt).toLocaleString("en-CA", {
-            dateStyle: "medium",
-            timeStyle: "short",
-          })}
+          {stampInBusinessTz(deposit.createdAt)}
         </div>
       </div>
       <span aria-hidden className="text-lg text-ink3">

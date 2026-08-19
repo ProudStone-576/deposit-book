@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { OwnerDay } from "@/lib/queries";
-import { todayYmd } from "@/lib/dates";
+import { ownerDayState, todayYmd } from "@/lib/dates";
 import { fmt } from "@/lib/money";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -25,17 +25,11 @@ export function OwnerCalendar({ days }: { days: OwnerDay[] }) {
 
       <div className="grid grid-cols-7 gap-1">
         {days.map((d) => {
-          const missing = Math.max(0, d.expected - d.filed);
-          const state =
-            d.expected === 0
-              ? "off"
-              : d.isFuture
-                ? "future"
-                : missing === 0
-                  ? "filed"
-                  : d.isPast
-                    ? "missed"
-                    : "due";
+          // A day with no store due is only "closed" if nothing was banked on
+          // it. A deposit backdated to before a store joined lands on such a
+          // day, and it used to vanish from this calendar while still counting
+          // in the month total.
+          const { state, interactive } = ownerDayState(d);
 
           const cls =
             state === "filed"
@@ -47,8 +41,6 @@ export function OwnerCalendar({ days }: { days: OwnerDay[] }) {
                   : state === "off"
                     ? "day-off"
                     : "";
-
-          const interactive = d.expected > 0 && !d.isFuture;
 
           const body = (
             <>
@@ -73,7 +65,12 @@ export function OwnerCalendar({ days }: { days: OwnerDay[] }) {
             </>
           );
 
-          const label = `${d.ymd}: ${d.filed} of ${d.expected} stores filed, ${fmt(d.totalCents)}`;
+          const label =
+            `${d.ymd}: ${d.filed} of ${d.expected} stores filed` +
+            (d.unscheduled > 0
+              ? `, plus ${d.unscheduled} not due that day`
+              : "") +
+            `, ${fmt(d.totalCents)}`;
           const base = `day ${cls} ${d.inMonth ? "" : "day-out"} ${
             d.ymd === today ? "day-today" : ""
           }`;

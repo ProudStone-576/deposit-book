@@ -176,8 +176,9 @@ export function DepositForm({
       </button>
 
       <p className="hint pb-4 text-center">
-        Once filed, a deposit cannot be edited &mdash; only voided with a reason.
-        The Company Admin sees both records.
+        Once filed, a deposit cannot be edited. On the day you file it you can
+        void it with a reason, or delete it outright; after that it is the
+        Company Admin&rsquo;s call. The Company Admin sees every record.
       </p>
     </form>
   );

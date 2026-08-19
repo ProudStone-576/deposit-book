@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireOwner } from "@/lib/auth";
 import { ownerDay } from "@/lib/queries";
-import { isYmd, longDate, monthKey } from "@/lib/dates";
+import { isYmd, longDate, monthKey, timeInBusinessTz } from "@/lib/dates";
 import { fmt } from "@/lib/money";
 import { AppShell, PageHead } from "@/components/AppShell";
 import { Stat } from "@/components/Stat";
@@ -126,10 +126,7 @@ export default async function OwnerDayPage({
                 </div>
                 <div className="text-xs text-ink3">
                   {d.enteredBy.name} &middot;{" "}
-                  {new Date(d.createdAt).toLocaleTimeString("en-CA", {
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}
+                  {timeInBusinessTz(d.createdAt)}
                   {d.bagNumber ? ` · Bag ${d.bagNumber}` : ""}
                 </div>
               </div>

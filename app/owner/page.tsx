@@ -47,6 +47,16 @@ export default async function OwnerPage({
         </a>
       )}
 
+      {summary.unscheduled > 0 && (
+        <p className="notice notice-quiet">
+          {summary.unscheduled} deposit{summary.unscheduled === 1 ? "" : "s"} this
+          month {summary.unscheduled === 1 ? "was" : "were"} filed on a day the
+          store was not due &mdash; usually a slip backdated to before the store
+          joined. The money is in the totals below; those days are marked with a
+          tick on the calendar but are not counted as expected.
+        </p>
+      )}
+
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat label="Month total" value={fmt(summary.totalCents)} tone="accent" />
         <Stat label="Deposits filed" value={String(summary.filed)} tone="ok" />

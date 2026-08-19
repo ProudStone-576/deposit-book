@@ -2,7 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { assertStoreAccess, requireSession } from "@/lib/auth";
 import { depositById } from "@/lib/queries";
-import { longDate, monthKey, todayYmd, ymdInBusinessTz } from "@/lib/dates";
+import {
+  longDate,
+  monthKey,
+  stampInBusinessTz,
+  todayYmd,
+  ymdInBusinessTz,
+} from "@/lib/dates";
 import { fmt } from "@/lib/money";
 import { AppShell, PageHead } from "@/components/AppShell";
 import { VoidForm } from "@/components/VoidForm";
@@ -63,12 +69,7 @@ export default async function DepositDetailPage({
           <div className="eyebrow text-miss">Voided</div>
           <div className="mt-1 font-normal">
             {deposit.voidReason} &mdash; {deposit.voidedBy?.name ?? "unknown"},{" "}
-            {deposit.voidedAt
-              ? new Date(deposit.voidedAt).toLocaleString("en-CA", {
-                  dateStyle: "medium",
-                  timeStyle: "short",
-                })
-              : ""}
+            {deposit.voidedAt ? stampInBusinessTz(deposit.voidedAt) : ""}
           </div>
         </div>
       )}
@@ -95,10 +96,7 @@ export default async function DepositDetailPage({
           <Row label="Filed by" value={deposit.enteredBy.name} />
           <Row
             label="Filed at"
-            value={new Date(deposit.createdAt).toLocaleString("en-CA", {
-              dateStyle: "medium",
-              timeStyle: "short",
-            })}
+            value={stampInBusinessTz(deposit.createdAt)}
           />
           <Row label="Business date" value={deposit.businessDate} />
           {deposit.bagNumber && <Row label="Bag" value={deposit.bagNumber} />}

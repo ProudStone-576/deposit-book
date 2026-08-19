@@ -45,6 +45,34 @@ export function todayYmd(): Ymd {
   return ymdInBusinessTz(new Date());
 }
 
+/**
+ * A stored moment, rendered as the wall clock in the business timezone.
+ *
+ * These are the only date helpers that take a real instant. Everything else
+ * here works on "YYYY-MM-DD" strings and must stay timezone-free: those build a
+ * host-local Date and format it host-local, which agree with each other. Adding
+ * a timeZone to them would drag every business date back a day.
+ *
+ * Without this the host clock decides, and a UTC server shows an evening
+ * deposit at 2:30 a.m. under tomorrow's date.
+ */
+export function stampInBusinessTz(d: Date): string {
+  return new Date(d).toLocaleString("en-CA", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: BUSINESS_TZ,
+  });
+}
+
+/** Clock time alone, in the business timezone. */
+export function timeInBusinessTz(d: Date): string {
+  return new Date(d).toLocaleTimeString("en-CA", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: BUSINESS_TZ,
+  });
+}
+
 export function addDays(s: Ymd, n: number): Ymd {
   const d = fromYmd(s);
   d.setDate(d.getDate() + n);
@@ -131,6 +159,34 @@ export function isDepositDay(depositDaysCsv: string, ymd: Ymd): boolean {
 }
 
 export type DayState = "filed" | "missed" | "due" | "off" | "future";
+
+/**
+ * State of one cell on the Company Admin's month calendar.
+ *
+ * Kept here, next to dayState, because the two must stay in step: the store
+ * calendar treats "this day has money on it" as decisive, and this one has to
+ * agree or the same deposit shows on one calendar and not the other.
+ */
+export function ownerDayState(d: {
+  expected: number;
+  filed: number;
+  unscheduled: number;
+  isPast: boolean;
+  isFuture: boolean;
+}): { state: DayState; interactive: boolean; missing: number } {
+  const missing = Math.max(0, d.expected - d.filed);
+  const nothingHappened = d.expected === 0 && d.unscheduled === 0;
+  const state: DayState = nothingHappened
+    ? "off"
+    : d.isFuture
+      ? "future"
+      : missing === 0
+        ? "filed"
+        : d.isPast
+          ? "missed"
+          : "due";
+  return { state, interactive: !nothingHappened && !d.isFuture, missing };
+}
 
 export function dayState(opts: {
   ymd: Ymd;

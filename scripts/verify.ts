@@ -12,11 +12,14 @@ import { parseDollarsToCents, fmt } from "../lib/money";
 import { checkRate, recordFailure, clearRate } from "../lib/ratelimit";
 import {
   dayState,
+  ownerDayState,
   calendarGrid,
   isDepositDay,
   addDays,
   todayYmd,
   ymdInBusinessTz,
+  stampInBusinessTz,
+  longDate,
   BUSINESS_TZ,
 } from "../lib/dates";
 
@@ -139,6 +142,46 @@ async function main() {
     }) === "off",
   );
   check("addDays crosses month end", addDays("2026-08-31", 1) === "2026-09-01");
+
+  // A moment must render as the wall clock in the business town, not on the
+  // host. These pass on a developer machine already set to Vancouver, so the
+  // real check is `TZ=UTC npx tsx --env-file=.env scripts/verify.ts`.
+  const evening = new Date("2026-08-19T02:30:00.000Z"); // 7:30pm Aug 18 in Vancouver
+  check(
+    "a filed-at stamp shows the business-timezone day",
+    stampInBusinessTz(evening).includes("Aug 18, 2026"),
+    stampInBusinessTz(evening),
+  );
+  check(
+    "a filed-at stamp shows the business-timezone time",
+    stampInBusinessTz(evening).includes("7:30"),
+    stampInBusinessTz(evening),
+  );
+  // The opposite trap: business dates are plain strings and must never be
+  // pushed through a timezone, or every one of them slides back a day.
+  check(
+    "a business date is not shifted by the host clock",
+    longDate("2026-08-19").includes("August 19"),
+    longDate("2026-08-19"),
+  );
+
+  // The admin calendar has to agree with the store calendar about whether a
+  // day has money on it.
+  check(
+    "a deposit filed on an unexpected day still shows on the admin calendar",
+    ownerDayState({ expected: 0, filed: 0, unscheduled: 1, isPast: true, isFuture: false })
+      .state === "filed",
+  );
+  check(
+    "an off-schedule filing cannot mask a store that missed",
+    ownerDayState({ expected: 1, filed: 0, unscheduled: 1, isPast: true, isFuture: false })
+      .state === "missed",
+  );
+  check(
+    "a day with nothing due and nothing filed stays closed",
+    ownerDayState({ expected: 0, filed: 0, unscheduled: 0, isPast: true, isFuture: false })
+      .state === "off",
+  );
   check(
     "today is computed in the business timezone",
     todayYmd() ===

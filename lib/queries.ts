@@ -14,14 +14,18 @@ import {
 /**
  * Is a deposit expected from this store on this date?
  *
- * Two things have to be true: the store deposits on that weekday, and the date
- * is on or after the day the store joined the system. Without the second test a
- * freshly seeded store would show every past day as missed.
+ * Three things have to be true: the store is still open, it deposits on that
+ * weekday, and the date is on or after the day it joined the system. Without
+ * the last test a freshly seeded store would show every past day as missed.
+ *
+ * "Not expected" is only ever about the *miss* counts. Money a store really
+ * filed is counted everywhere regardless — see ownerDay and cityTotals.
  */
 function expectsDeposit(
-  store: { depositDays: string; startDate: string | null },
+  store: { depositDays: string; startDate: string | null; active: boolean },
   ymd: Ymd,
 ): boolean {
+  if (!store.active) return false;
   if (store.startDate && ymd < store.startDate) return false;
   return isDepositDay(store.depositDays, ymd);
 }
@@ -94,7 +98,14 @@ export type OwnerDay = {
   ymd: Ymd;
   inMonth: boolean;
   expected: number;
+  /** Stores that were due that day AND filed. Never more than `expected`. */
   filed: number;
+  /**
+   * Stores that filed without being due — an off-schedule drop, or a deposit
+   * backdated to before the store joined. Counted apart from `filed` so it can
+   * never paper over a store that was due and missed.
+   */
+  unscheduled: number;
   totalCents: number;
   isPast: boolean;
   isFuture: boolean;
@@ -124,15 +135,23 @@ export async function ownerMonth(month: string) {
   }
 
   const today = todayYmd();
-  const days: OwnerDay[] = cells.map((c) => ({
-    ymd: c.ymd,
-    inMonth: c.inMonth,
-    expected: stores.filter((s) => expectsDeposit(s, c.ymd)).length,
-    filed: filedByDay.get(c.ymd)?.size ?? 0,
-    totalCents: totalByDay.get(c.ymd) ?? 0,
-    isPast: c.ymd < today,
-    isFuture: c.ymd > today,
-  }));
+  const days: OwnerDay[] = cells.map((c) => {
+    const didFile = filedByDay.get(c.ymd) ?? new Set<number>();
+    const due = stores.filter((s) => expectsDeposit(s, c.ymd));
+    // Only a store that was due can close the gap. Counting every filing
+    // against `expected` let an off-schedule drop hide a store that missed.
+    const filed = due.filter((s) => didFile.has(s.id)).length;
+    return {
+      ymd: c.ymd,
+      inMonth: c.inMonth,
+      expected: due.length,
+      filed,
+      unscheduled: didFile.size - filed,
+      totalCents: totalByDay.get(c.ymd) ?? 0,
+      isPast: c.ymd < today,
+      isFuture: c.ymd > today,
+    };
+  });
 
   const { start, end } = monthRange(month);
   const inMonth = days.filter((d) => d.inMonth && d.ymd >= start && d.ymd <= end);
@@ -143,6 +162,7 @@ export async function ownerMonth(month: string) {
     summary: {
       totalCents: inMonth.reduce((s, d) => s + d.totalCents, 0),
       filed: inMonth.reduce((s, d) => s + d.filed, 0),
+      unscheduled: inMonth.reduce((s, d) => s + d.unscheduled, 0),
       expected: inMonth
         .filter((d) => !d.isFuture)
         .reduce((s, d) => s + d.expected, 0),
@@ -156,7 +176,6 @@ export async function ownerMonth(month: string) {
 /** Owner drill-down: every store's status for one business date. */
 export async function ownerDay(ymd: Ymd) {
   const stores = await prisma.store.findMany({
-    where: { active: true },
     orderBy: [{ city: "asc" }, { storeNumber: "asc" }],
   });
   const deposits = await prisma.deposit.findMany({
@@ -165,19 +184,27 @@ export async function ownerDay(ymd: Ymd) {
     orderBy: { createdAt: "asc" },
   });
 
+  // Open stores are always listed. A closed one appears only on a date it
+  // actually filed, so money it banked while open never drops out of the day
+  // total — the month calendar counts that money either way, and the two views
+  // have to agree.
+  const filedHere = new Set(deposits.map((d) => d.storeId));
+  const shown = stores.filter((s) => s.active || filedHere.has(s.id));
+
   const today = todayYmd();
-  const rows = stores.map((store) => {
+  const rows = shown.map((store) => {
     const mine = deposits.filter((d) => d.storeId === store.id);
     const active = mine.filter((d) => d.status === "ACTIVE");
-    const expected = expectsDeposit(store, ymd);
+    const due = expectsDeposit(store, ymd);
     return {
       store,
+      due,
       deposits: mine,
       totalCents: active.reduce((s, d) => s + d.totalCents, 0),
       state: dayState({
         ymd,
         hasDeposit: active.length > 0,
-        isDepositDay: expected,
+        isDepositDay: due,
         today,
       }),
     };
@@ -186,8 +213,10 @@ export async function ownerDay(ymd: Ymd) {
   return {
     rows,
     totalCents: rows.reduce((s, r) => s + r.totalCents, 0),
-    filed: rows.filter((r) => r.state === "filed").length,
-    expected: rows.filter((r) => r.state !== "off").length,
+    // Same populations the month calendar uses: only a store that was due
+    // counts towards filed/expected. A future date expects nothing yet.
+    filed: rows.filter((r) => r.due && r.state === "filed").length,
+    expected: ymd > today ? 0 : rows.filter((r) => r.due).length,
   };
 }
 
@@ -240,6 +269,8 @@ export async function cityTotals(month: string) {
       totalCents: agg?.total ?? 0,
       filedDays: agg?.days.size ?? 0,
       expectedDays: expected,
+      // expectsDeposit already returns false for a closed store, so `expected`
+      // is 0 there and a closed store is never reported as missing.
       missedDays: Math.max(0, expected - (agg?.days.size ?? 0)),
     };
   });
