@@ -58,6 +58,15 @@ if that ever stops being true.
 Each store carries a `startDate`, set to the day it was seeded. Days before it
 are never flagged as missed, so going live does not paint the calendar red.
 
+### Changing the Company Admin PIN
+
+```bash
+npm run admin:pin -- 4821
+```
+
+Rotates the PIN in place and leaves every deposit untouched. Use this rather
+than re-seeding, which erases the books.
+
 ### Re-seeding
 
 `npm run db:seed` **erases the books**. Once real deposits exist it refuses to
@@ -91,20 +100,26 @@ rather than by care:
 3. **The server re-parses the amount.** Whatever the browser shows is display
    only; `createDepositAction` parses and validates the submitted value itself
    and rejects anything ambiguous (`1.234`, `12,3`, letters, blank, zero).
-4. **Nothing is ever edited or deleted.** A wrong deposit is *voided* with a
-   written reason; the original stays in the books and the Company Admin sees both.
-   A manager can only void on the same day they filed; after that it is the
-   Company Admin's call.
-5. **Date guards.** No future dates, and nothing older than 45 days without the
+4. **A manager can never edit or delete.** A wrong deposit is *voided* with a
+   written reason; the original stays in the books and both records remain
+   visible. A manager can only void on the same day they filed; after that it
+   is the Company Admin's call.
+5. **Deleting is Company Admin only, and heavier than voiding.** It removes the
+   row from the books — calendar, day totals and month totals all change as
+   though it was never filed. It needs a written reason and the exact amount
+   re-keyed, and the whole deposit is copied into the audit log first, so the
+   figure stays recoverable from the trail even though the row is gone. Prefer
+   voiding: it leaves the correction visible.
+6. **Date guards.** No future dates, and nothing older than 45 days without the
    Company Admin. Business dates are stored as `YYYY-MM-DD` strings so no timezone can
    move money into the wrong day.
-6. **Duplicate guard.** A second deposit on a date that already has one needs an
+7. **Duplicate guard.** A second deposit on a date that already has one needs an
    explicit tick, so a double-filing is deliberate rather than accidental.
-7. **One timezone decides the date.** `BUSINESS_TZ` (default
+8. **One timezone decides the date.** `BUSINESS_TZ` (default
    `America/Vancouver`) determines what "today" means, so a server running in
    UTC cannot file an evening deposit under tomorrow's date.
-8. **Everything is audited.** Sign-ins, failed sign-ins, filings, voids and
-   blocked access attempts all land in `AuditLog`.
+9. **Everything is audited.** Sign-ins, failed sign-ins, filings, voids and
+   blocked access attempts, exports and deletions all land in `AuditLog`.
 
 ## How stores are kept apart
 
@@ -125,7 +140,7 @@ npm run dev            # in one terminal
 npx tsx --env-file=.env scripts/verify.ts
 ```
 
-71 checks covering the arithmetic, the calendar states, stored-data integrity
+74 checks covering the arithmetic, the calendar states, stored-data integrity
 (every stored amount is still a positive whole number of cents), and
 cross-store access — a manager for store 101 cannot open store 102's deposit,
 cannot reach the admin pages, and a forged cookie is rejected. The last group

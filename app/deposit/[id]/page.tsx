@@ -6,6 +6,7 @@ import { longDate, monthKey, todayYmd, ymdInBusinessTz } from "@/lib/dates";
 import { fmt } from "@/lib/money";
 import { AppShell, PageHead } from "@/components/AppShell";
 import { VoidForm } from "@/components/VoidForm";
+import { DeleteForm } from "@/components/DeleteForm";
 
 export default async function DepositDetailPage({
   params,
@@ -104,6 +105,12 @@ export default async function DepositDetailPage({
       </section>
 
       {!voided && (isOwner || managerCanVoid) && <VoidForm depositId={deposit.id} />}
+
+      {isOwner && (
+        <div className="border-t border-line pt-4 text-center">
+          <DeleteForm depositId={deposit.id} totalCents={deposit.totalCents} />
+        </div>
+      )}
       {!voided && !isOwner && !managerCanVoid && (
         <p className="notice notice-quiet">
           This deposit was filed on an earlier day, so it can no longer be changed

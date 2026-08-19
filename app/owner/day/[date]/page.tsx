@@ -17,11 +17,14 @@ const STATE_BADGE: Record<string, { text: string; cls: string }> = {
 
 export default async function OwnerDayPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ date: string }>;
+  searchParams: Promise<{ deleted?: string }>;
 }) {
   const session = await requireOwner();
   const { date } = await params;
+  const { deleted } = await searchParams;
   if (!isYmd(date)) notFound();
 
   const { rows, totalCents, filed, expected } = await ownerDay(date);
@@ -31,6 +34,13 @@ export default async function OwnerDayPage({
       <Link href={`/owner?month=${monthKey(date)}`} className="backlink">
         <span aria-hidden>‹</span> Calendar
       </Link>
+
+      {deleted === "1" && (
+        <p className="notice notice-miss">
+          Deposit deleted. A copy was written to the audit log before it was
+          removed.
+        </p>
+      )}
 
       <PageHead eyebrow="Company Admin" title={longDate(date)} />
 

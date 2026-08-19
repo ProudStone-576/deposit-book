@@ -278,3 +278,85 @@ export async function voidDepositAction(
   revalidatePath(`/deposit/${id}`);
   return {};
 }
+
+/**
+ * Permanently remove a deposit. Company Admin only.
+ *
+ * Voiding is still the normal correction: it leaves the original figure on the
+ * record where anyone can see what happened. Deleting takes the row out of the
+ * books entirely — the calendar, the day totals and the month totals all change
+ * as though it was never filed.
+ *
+ * Because of that, the whole deposit is copied into the audit log before it
+ * goes. The row disappears; the evidence that it existed does not.
+ */
+export async function deleteDepositAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const session = await requireSession();
+  if (session.role !== "OWNER") {
+    await audit({
+      userId: session.userId,
+      userName: session.name,
+      action: "VIEW_DENIED",
+      entity: "Deposit",
+      detail: { attempted: "delete" },
+    });
+    return { error: "Only the Company Admin can delete a deposit." };
+  }
+
+  const id = Number(formData.get("depositId"));
+  const reason = String(formData.get("reason") ?? "").trim();
+  const confirm = String(formData.get("confirmAmount") ?? "").trim();
+
+  if (!Number.isInteger(id)) return { error: "Bad deposit id." };
+  if (reason.length < 5) return { error: "Give a reason (at least 5 characters)." };
+
+  const deposit = await prisma.deposit.findUnique({
+    where: { id },
+    include: { store: true, enteredBy: true },
+  });
+  if (!deposit) return { error: "Deposit not found." };
+
+  // Re-key the amount, the same guard used when filing it. Deleting the wrong
+  // row is not recoverable from the app.
+  const confirmCents = parseDollarsToCents(confirm);
+  if (confirmCents === null || confirmCents !== deposit.totalCents) {
+    return {
+      error: "Type the exact amount of this deposit to confirm the deletion.",
+      fieldErrors: { confirmAmount: "Does not match this deposit" },
+    };
+  }
+
+  await audit({
+    userId: session.userId,
+    userName: session.name,
+    action: "DEPOSIT_DELETE",
+    entity: "Deposit",
+    entityId: deposit.id,
+    detail: {
+      reason,
+      // A full copy, so the figure is still recoverable from the trail.
+      deposit: {
+        id: deposit.id,
+        businessDate: deposit.businessDate,
+        storeNumber: deposit.store.storeNumber,
+        storeName: deposit.store.name,
+        totalCents: deposit.totalCents,
+        status: deposit.status,
+        bagNumber: deposit.bagNumber,
+        note: deposit.note,
+        filedBy: deposit.enteredBy.name,
+        filedAt: deposit.createdAt.toISOString(),
+        voidReason: deposit.voidReason,
+      },
+    },
+  });
+
+  await prisma.deposit.delete({ where: { id } });
+
+  revalidatePath("/dashboard");
+  revalidatePath("/owner");
+  redirect(`/owner/day/${deposit.businessDate}?deleted=1`);
+}

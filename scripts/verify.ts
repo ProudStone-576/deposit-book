@@ -428,6 +428,31 @@ async function main() {
     csv.split("\n")[0].includes("amount_cents"),
   );
 
+  // Deleting is Company Admin only. Checked over HTTP: importing the action
+  // here would drag in server-only, which cannot load outside Next.
+  const victim = await prisma.deposit.create({
+    data: {
+      storeId: s101.id,
+      businessDate: todayYmd(),
+      totalCents: 987654,
+      enteredById: m101.id,
+      note: "verify.ts delete fixture",
+    },
+  });
+  fixtureIds.push(victim.id);
+
+  check(
+    "a deposit exists to delete",
+    (await prisma.deposit.count({ where: { id: victim.id } })) === 1,
+  );
+  check(
+    "deleting is not offered to a store manager",
+    !(await get(`/deposit/${victim.id}`, jwt101)).body.includes("Delete this deposit"),
+  );
+  check(
+    "deleting is offered to the Company Admin",
+    (await get(`/deposit/${victim.id}`, jwtOwner)).body.includes("Delete this deposit"),
+  );
   console.log("\n-- shell and branding --");
   const newDeposit = await get("/deposit/new", jwt101);
   for (const [label, page] of [
