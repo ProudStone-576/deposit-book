@@ -13,9 +13,10 @@
     "db:studio": "prisma studio",
     "typecheck": "tsc --noEmit",
     "db:deploy": "prisma migrate deploy",
-    "db:backup": "tsx scripts/backup.ts",
+    "db:backup": "tsx --env-file=.env scripts/backup.ts",
     "verify": "tsx --env-file=.env scripts/verify.ts",
-    "start:dev-server": "next start"
+    "start:dev-server": "next start",
+    "db:restore": "tsx --env-file=.env scripts/restore.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

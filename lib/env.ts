@@ -1,4 +1,5 @@
 import "server-only";
+import path from "node:path";
 
 /**
  * Configuration is checked once, loudly, at boot. A deposit system that starts
@@ -36,8 +37,30 @@ export function assertProductionConfig(): void {
     );
   }
 
-  if (!process.env.DATABASE_URL) {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) {
     problems.push("DATABASE_URL is not set.");
+  } else if (isProd && /^file:(?![/\]|[A-Za-z]:)/.test(dbUrl)) {
+    problems.push(
+      `DATABASE_URL "${dbUrl}" is a relative path. In production the server's ` +
+        "working directory is not the project root, so a relative path can " +
+        "silently point at the wrong file. Use an absolute one.",
+    );
+  }
+
+  // A relative backup directory resolves against the server's working
+  // directory, which for a standalone build is inside .next/. Backups written
+  // there are destroyed by the next build, without anyone noticing.
+  const backupDir = process.env.BACKUP_DIR;
+  if (isProd && backupDir && !path.isAbsolute(backupDir)) {
+    problems.push(
+      `BACKUP_DIR "${backupDir}" is relative. Use an absolute path so backups ` +
+        "cannot land inside the build output and be deleted by a deploy.",
+    );
+  }
+  const mirrorDir = process.env.BACKUP_MIRROR_DIR;
+  if (isProd && mirrorDir && !path.isAbsolute(mirrorDir)) {
+    problems.push(`BACKUP_MIRROR_DIR "${mirrorDir}" is relative. Use an absolute path.`);
   }
 
   const tz = process.env.BUSINESS_TZ;

@@ -12,8 +12,14 @@ services:
       TZ: "${BUSINESS_TZ:-America/Vancouver}"
       BACKUP_DIR: "/data/backups"
       BACKUP_KEEP: "30"
+      BACKUP_INTERVAL_HOURS: "6"
+      # Mirrored onto the host, so losing the container or its volume does not
+      # lose the book. Point BACKUP_MIRROR_HOST_DIR at a synced or backed-up
+      # folder for a copy that survives losing the machine too.
+      BACKUP_MIRROR_DIR: "/mirror"
     volumes:
       - deposits:/data
+      - ${BACKUP_MIRROR_HOST_DIR:-./backups}:/mirror
 
 volumes:
   deposits:

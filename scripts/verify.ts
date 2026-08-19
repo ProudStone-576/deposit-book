@@ -399,6 +399,36 @@ async function main() {
     (headRes.headers.get("cache-control") ?? "").includes("no-store"),
   );
 
+  // A backup that has never been opened is a hope, not a backup.
+  const { runBackup } = await import("../lib/backup");
+  const { unlinkSync } = await import("node:fs");
+  try {
+    const b = await runBackup(prisma);
+    check("backup produces a verified copy", b.bytes > 0, `${b.bytes} bytes`);
+    const probe = new PrismaClient({
+      datasources: { db: { url: (await import("../lib/backup")).fileUrl(b.file) } },
+    });
+    const restoredCount = await probe.deposit.count();
+    await probe.$disconnect();
+    check(
+      "the backup can be reopened and read",
+      restoredCount === (await prisma.deposit.count()),
+      `${restoredCount} in copy`,
+    );
+    unlinkSync(b.file);
+  } catch (e) {
+    check("backup produces a verified copy", false, (e as Error).message);
+  }
+
+  const journal = await prisma.$queryRawUnsafe<{ journal_mode: string }[]>(
+    "PRAGMA journal_mode",
+  );
+  check(
+    "database runs in WAL mode",
+    journal?.[0]?.journal_mode?.toLowerCase() === "wal",
+    journal?.[0]?.journal_mode,
+  );
+
   console.log("\n-- shell and branding --");
   const newDeposit = await get("/deposit/new", jwt101);
   for (const [label, page] of [

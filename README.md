@@ -125,7 +125,7 @@ npm run dev            # in one terminal
 npx tsx --env-file=.env scripts/verify.ts
 ```
 
-63 checks covering the arithmetic, the calendar states, stored-data integrity
+67 checks covering the arithmetic, the calendar states, stored-data integrity
 (every stored amount is still a positive whole number of cents), and
 cross-store access — a manager for store 101 cannot open store 102's deposit,
 cannot reach the admin pages, and a forged cookie is rejected. The last group
@@ -208,15 +208,55 @@ deposits.example.com {
 
 Forward `X-Forwarded-For`; the login throttle uses it to identify a caller.
 
-### Backups
+### Backups and recovery
+
+The app backs itself up. There is no cron job to forget and no command anyone
+has to remember.
+
+- A copy is taken ~30s after every start and then every `BACKUP_INTERVAL_HOURS`
+  (default 6).
+- Each copy is made with `VACUUM INTO`, so it is a consistent snapshot taken
+  while the app keeps serving.
+- Each copy is then **opened and checked** with `PRAGMA integrity_check` and a
+  read of the deposits table. A copy that fails is deleted rather than left
+  looking healthy.
+- The newest `BACKUP_KEEP` (default 30) are kept.
+- The Company Admin sees the time of the last successful copy on their
+  overview, and a red banner if it is overdue or failing.
+
+**Set `BACKUP_MIRROR_DIR`.** A backup on the same disk as the database does not
+survive the failure that destroys the database. Point it at a second volume, a
+mounted share, or a synced folder (OneDrive, Dropbox, rclone) so a copy leaves
+the machine.
+
+Paths must be **absolute**. In a standalone build the server's working
+directory is inside `.next/`, so a relative `BACKUP_DIR` would write backups
+into the build output where the next deploy deletes them. The app refuses to
+start in production if these are relative.
+
+Manual copy, any time:
 
 ```bash
-npm run db:backup        # consistent copy, safe to run while serving
+npm run db:backup
 ```
 
-Keeps the newest 30 in `BACKUP_DIR`. Schedule it daily — cron on Linux, Task
-Scheduler on Windows, or `docker compose exec app npm run db:backup`. Copy those
-files somewhere off the machine; a backup on the same disk is not a backup.
+Restoring:
+
+```bash
+npm run db:restore                            # list copies, with their contents
+npm run db:restore -- <file> --yes            # replace the live database
+```
+
+The restore refuses a file that fails its integrity check, prints what it is
+about to replace and with what, and copies the current database aside before
+overwriting — so restoring the wrong file is itself recoverable. Restart the
+app afterwards.
+
+### Durability
+
+SQLite runs in **WAL** mode with `synchronous=FULL`. A deposit is on disk
+before the manager is told it filed, and a crash or power cut rolls back the
+partial transaction instead of tearing the file.
 
 ### Configuration
 
