@@ -1,10 +1,10 @@
 /**
- * Production seed: the 13 stores, their managers, and the Company Admin.
+ * Production seed: the 15 stores, their managers, and the Company Admin.
  *
  * This creates NO deposits and NO history. The books start empty on the day
  * you run it, and the first real numbers are the ones managers enter.
  *
- * Store numbers are text on purpose — two of them carry a leading zero.
+ * Store numbers are text on purpose — four of them carry a leading zero.
  *
  * The Company Admin PIN comes from ADMIN_PIN (OWNER_PIN is still honoured for
  * anything already configured). If neither is set a random one is generated and
@@ -31,6 +31,8 @@ const STORES = [
   { storeNumber: "77947", name: "Aldergrove", city: "Aldergrove" },
   { storeNumber: "38866", name: "Langley", city: "Langley" },
   { storeNumber: "91214", name: "Hope", city: "Hope" },
+  { storeNumber: "0013", name: "A&W King Rd", city: "Abbotsford" },
+  { storeNumber: "0014", name: "A&W Aldergrove", city: "Aldergrove" },
 ];
 
 // Every day of the week: 0 = Sunday .. 6 = Saturday.

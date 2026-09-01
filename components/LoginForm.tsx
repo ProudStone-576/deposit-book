@@ -74,7 +74,7 @@ export function LoginForm() {
               className="field text-center text-3xl font-extrabold tracking-[0.35em]"
             />
             <p className="hint mt-2">
-              The Company Admin account can see all thirteen stores, so it
+              The Company Admin account can see all fifteen stores, so it
               stays behind a PIN.
             </p>
           </div>

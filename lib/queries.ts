@@ -111,7 +111,7 @@ export type OwnerDay = {
   isFuture: boolean;
 };
 
-/** Owner's month: how many of the 13 stores filed, per day. */
+/** Owner's month: how many of the 15 stores filed, per day. */
 export async function ownerMonth(month: string) {
   const stores = await prisma.store.findMany({
     where: { active: true },

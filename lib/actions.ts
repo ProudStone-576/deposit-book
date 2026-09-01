@@ -74,13 +74,17 @@ export async function loginAction(
     include: { store: true },
   });
 
-  // Two store numbers begin with a zero. If someone types "2627", try "02627"
-  // rather than telling them their own store number is wrong.
+  // Several store numbers begin with a zero, and they are not all the same
+  // length ("02627" is five digits, "0013" is four). If someone types "2627"
+  // or "13", widen the code a zero at a time rather than telling them their
+  // own store number is wrong.
   if (!user && /^\d{1,5}$/.test(code)) {
-    user = await prisma.user.findUnique({
-      where: { loginCode: code.padStart(5, "0") },
-      include: { store: true },
-    });
+    for (let len = code.length + 1; len <= 5 && !user; len++) {
+      user = await prisma.user.findUnique({
+        where: { loginCode: code.padStart(len, "0") },
+        include: { store: true },
+      });
+    }
   }
 
   if (!user || !user.active) {

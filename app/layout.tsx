@@ -6,7 +6,7 @@ export const metadata: Metadata = {
     template: "%s · Deposit Book",
   },
   description:
-    "Daily store deposit records for 13 stores across 3 cities. Built by Aethon Core.",
+    "Daily store deposit records for 15 stores across 6 cities. Built by Aethon Core.",
   applicationName: "Deposit Book",
   authors: [{ name: "Aethon Core", url: "https://aethoncore.com" }],
   creator: "Aethon Core",

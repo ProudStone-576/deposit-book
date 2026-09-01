@@ -1,6 +1,6 @@
 # Deposit Book — prototype
 
-Daily cash-deposit tracking for 13 stores across 6 cities, with one Company Admin.
+Daily cash-deposit tracking for 15 stores across 6 cities, with one Company Admin.
 
 Built by [Aethon Core](https://aethoncore.com).
 
@@ -14,7 +14,7 @@ Built by [Aethon Core](https://aethoncore.com).
 npm install
 cp .env.example .env     # fill in DATABASE_URL, DIRECT_URL, SESSION_SECRET
 npm run db:deploy        # apply migrations
-npm run db:seed          # 13 stores + Company Admin; prints the PIN
+npm run db:seed          # 15 stores + Company Admin; prints the PIN
 npm run dev              # http://localhost:3000
 ```
 
@@ -29,9 +29,11 @@ The Company Admin PIN is set by `ADMIN_PIN` at seed time. If it is unset the
 seed generates one and prints it once — write it down, it is stored only as a
 hash.
 
-Store numbers are **text, not integers** — `02627` and `02631` carry a leading
-zero that an integer column would silently drop. A manager who types `2627`
-is matched to `02627` rather than being told their store number is wrong.
+Store numbers are **text, not integers** — `02627`, `02631`, `0013` and `0014`
+carry a leading zero that an integer column would silently drop. They are not
+all the same length, so a manager who types `2627` is matched to `02627`, and
+one who types `13` is matched to `0013`, rather than being told their store
+number is wrong.
 
 ### Stores
 
@@ -50,6 +52,8 @@ is matched to `02627` rather than being told their store number is wrong.
 | `77947` | Aldergrove | Aldergrove |
 | `38866` | Langley | Langley |
 | `91214` | Hope | Hope |
+| `0013` | A&W King Rd | Abbotsford |
+| `0014` | A&W Aldergrove | Aldergrove |
 
 Every store deposits **seven days a week**, so any day without a deposit is a
 missed day. Change `depositDays` on a store (CSV of `0`=Sunday .. `6`=Saturday)
@@ -66,6 +70,17 @@ npm run admin:pin -- 4821
 
 Rotates the PIN in place and leaves every deposit untouched. Use this rather
 than re-seeding, which erases the books.
+
+### Opening a new store
+
+```bash
+npm run store:add -- 0013 "A&W King Rd" Abbotsford
+```
+
+Adds the store and its manager sign-in to a live database and leaves every
+deposit untouched — use this rather than re-seeding. Its `startDate` is the day
+you run it, so the days before it are never flagged as missed. Re-running with
+the same store number corrects the name and city instead of failing.
 
 ### Re-seeding
 
@@ -84,7 +99,7 @@ deposit is in.
 | red ✕ | expected, never filed |
 | plain | store closed that day (Sundays by default) |
 
-The Company Admin's calendar shows **filed / expected** per day — `13/13` and a green
+The Company Admin's calendar shows **filed / expected** per day — `15/15` and a green
 tick means every store is in. Tap any day to see exactly which store is short.
 
 ## How the numbers are protected
@@ -126,7 +141,7 @@ rather than by care:
 
 Managers sign in with the store number alone, so **a store number is the only
 credential** — anyone who knows it can act as that store. The Company Admin
-account is the one that can see all 13 stores, and it still requires a PIN.
+account is the one that can see all 15 stores, and it still requires a PIN.
 
 A manager's `storeId` comes from their signed session cookie — never from a URL
 or form field. Every deposit read passes through `assertStoreAccess()`, which
@@ -158,7 +173,7 @@ app/
   deposit/new/          manager: file a deposit
   deposit/[id]/         one deposit in full
   owner/                admin: all-store calendar + city rollups
-  owner/day/[date]/     admin: all 13 stores for one date
+  owner/day/[date]/     admin: all 15 stores for one date
   owner/store/[id]/     admin: one store's month
 components/
   AppShell.tsx  header + page body + footer, used by every signed-in screen
@@ -172,7 +187,7 @@ lib/
   queries.ts all reads (store month, owner month, day drill-down)
 prisma/
   schema.prisma  Store, User, Deposit, AuditLog
-  seed.ts        the 13 stores, their managers, and the Company Admin
+  seed.ts        the 15 stores, their managers, and the Company Admin
 ```
 
 ## Deploying (Vercel + Neon)

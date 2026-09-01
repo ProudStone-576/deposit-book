@@ -1,4 +1,4 @@
-// Deposit Book — 13 stores across 6 cities, one Company Admin.
+// Deposit Book — 15 stores across 6 cities, one Company Admin.
 // Money is ALWAYS stored as integer cents. Never floats.
 
 generator client {

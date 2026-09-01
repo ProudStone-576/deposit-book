@@ -201,7 +201,7 @@ async function main() {
 
   console.log("\n-- stored data --");
   const stores = await prisma.store.findMany({ orderBy: { storeNumber: "asc" } });
-  check("13 stores", stores.length === 13, `got ${stores.length}`);
+  check("15 stores", stores.length === 15, `got ${stores.length}`);
   const EXPECTED_CITIES: Record<string, string> = {
     "02627": "Abbotsford",
     "68295": "Abbotsford",
@@ -216,6 +216,8 @@ async function main() {
     "77947": "Aldergrove",
     "38866": "Langley",
     "91214": "Hope",
+    "0013": "Abbotsford",
+    "0014": "Aldergrove",
   };
   const wrongCity = stores.filter((s) => EXPECTED_CITIES[s.storeNumber] !== s.city);
   check(
@@ -233,7 +235,9 @@ async function main() {
   check(
     "leading zeros survived the round-trip",
     stores.some((s) => s.storeNumber === "02627") &&
-      stores.some((s) => s.storeNumber === "02631"),
+      stores.some((s) => s.storeNumber === "02631") &&
+      stores.some((s) => s.storeNumber === "0013") &&
+      stores.some((s) => s.storeNumber === "0014"),
   );
 
   const deposits = await prisma.deposit.findMany();
