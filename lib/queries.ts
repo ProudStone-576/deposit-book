@@ -4,6 +4,7 @@ import {
   addDays,
   calendarGrid,
   dayState,
+  isClosedOn,
   isDepositDay,
   monthRange,
   todayYmd,
@@ -14,19 +15,27 @@ import {
 /**
  * Is a deposit expected from this store on this date?
  *
- * Three things have to be true: the store is still open, it deposits on that
- * weekday, and the date is on or after the day it joined the system. Without
- * the last test a freshly seeded store would show every past day as missed.
+ * Four things have to be true: the store is still open, it is not shut for a
+ * temporary closure that day, it deposits on that weekday, and the date is on
+ * or after the day it joined the system. Without that last test a freshly
+ * seeded store would show every past day as missed.
  *
  * "Not expected" is only ever about the *miss* counts. Money a store really
  * filed is counted everywhere regardless — see ownerDay and cityTotals.
  */
 function expectsDeposit(
-  store: { depositDays: string; startDate: string | null; active: boolean },
+  store: {
+    depositDays: string;
+    startDate: string | null;
+    active: boolean;
+    closedFrom: string | null;
+    closedUntil: string | null;
+  },
   ymd: Ymd,
 ): boolean {
   if (!store.active) return false;
   if (store.startDate && ymd < store.startDate) return false;
+  if (isClosedOn(store, ymd)) return false;
   return isDepositDay(store.depositDays, ymd);
 }
 
@@ -72,6 +81,7 @@ export async function storeMonth(storeId: number, month: string) {
         ymd: c.ymd,
         hasDeposit: !!hit,
         isDepositDay: expectsDeposit(store, c.ymd),
+        isClosed: isClosedOn(store, c.ymd),
         today,
       }),
       totalCents: hit?.total ?? 0,
@@ -90,6 +100,7 @@ export async function storeMonth(storeId: number, month: string) {
       filed: inMonth.filter((d) => d.state === "filed").length,
       missed: inMonth.filter((d) => d.state === "missed").length,
       due: inMonth.filter((d) => d.state === "due").length,
+      closed: inMonth.filter((d) => d.state === "closed").length,
     },
   };
 }
@@ -205,6 +216,7 @@ export async function ownerDay(ymd: Ymd) {
         ymd,
         hasDeposit: active.length > 0,
         isDepositDay: due,
+        isClosed: isClosedOn(store, ymd),
         today,
       }),
     };

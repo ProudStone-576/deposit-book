@@ -2,6 +2,7 @@ const ITEMS = [
   { cls: "day-filed", mark: "✓", tone: "text-ok", label: "Deposit filed" },
   { cls: "day-due day-flag", mark: "", tone: "text-due", label: "Due today" },
   { cls: "day-missed day-flag", mark: "", tone: "text-miss", label: "Not filed" },
+  { cls: "day-closed", mark: "", tone: "text-ok", label: "Closed — none required" },
   { cls: "day-off", mark: "", tone: "text-ink3", label: "No deposit expected" },
 ];
 

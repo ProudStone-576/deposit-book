@@ -28,6 +28,14 @@ model Store {
   /// First day this store is on the system, "YYYY-MM-DD". Days before it are
   /// never flagged as missed, so a new store does not open to a wall of red.
   startDate   String?
+  /// A temporary closure: no deposit is required from closedFrom through
+  /// closedUntil, both "YYYY-MM-DD" and both inclusive. Days inside the window
+  /// are never flagged as missed; the day after closedUntil the store is back
+  /// on its normal schedule with no further action. Both null = open.
+  /// Unlike `active: false` this keeps the store on every list and leaves the
+  /// days outside the window — its history — exactly as they were.
+  closedFrom  String?
+  closedUntil String?
   createdAt   DateTime @default(now())
 
   users    User[]

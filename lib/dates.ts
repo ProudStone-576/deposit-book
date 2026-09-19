@@ -158,7 +158,25 @@ export function isDepositDay(depositDaysCsv: string, ymd: Ymd): boolean {
   return days.includes(weekdayOf(ymd));
 }
 
-export type DayState = "filed" | "missed" | "due" | "off" | "future";
+/**
+ * Is the store shut on this date for a temporary closure?
+ *
+ * The window is inclusive at both ends, so a store closed through "2026-10-31"
+ * is expected to deposit again on 2026-11-01 with nobody having to touch it.
+ * An open end (one side null) is an open-ended closure from/until that date;
+ * both null is an open store.
+ */
+export function isClosedOn(
+  store: { closedFrom: string | null; closedUntil: string | null },
+  ymd: Ymd,
+): boolean {
+  if (!store.closedFrom && !store.closedUntil) return false;
+  if (store.closedFrom && ymd < store.closedFrom) return false;
+  if (store.closedUntil && ymd > store.closedUntil) return false;
+  return true;
+}
+
+export type DayState = "filed" | "missed" | "due" | "off" | "closed" | "future";
 
 /**
  * State of one cell on the Company Admin's month calendar.
@@ -192,10 +210,15 @@ export function dayState(opts: {
   ymd: Ymd;
   hasDeposit: boolean;
   isDepositDay: boolean;
+  /** Inside a temporary closure window — see isClosedOn. */
+  isClosed?: boolean;
   today?: Ymd;
 }): DayState {
   const today = opts.today ?? todayYmd();
   if (opts.hasDeposit) return "filed";
+  // Ahead of "future" on purpose: a closure is a settled fact for the days
+  // still to come inside it, not something waiting to be decided.
+  if (opts.isClosed) return "closed";
   if (opts.ymd > today) return "future";
   if (!opts.isDepositDay) return "off";
   if (opts.ymd === today) return "due";

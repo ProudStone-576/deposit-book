@@ -16,7 +16,8 @@
     "verify": "tsx --env-file=.env scripts/verify.ts",
     "db:export": "tsx --env-file=.env scripts/export.ts",
     "admin:pin": "tsx --env-file=.env scripts/set-admin-pin.ts",
-    "store:add": "tsx --env-file=.env scripts/add-store.ts"
+    "store:add": "tsx --env-file=.env scripts/add-store.ts",
+    "store:close": "tsx --env-file=.env scripts/close-store.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

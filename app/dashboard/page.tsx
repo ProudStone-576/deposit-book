@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth";
 import { storeMonth } from "@/lib/queries";
-import { monthKey, todayYmd } from "@/lib/dates";
+import { isClosedOn, longDate, monthKey, todayYmd } from "@/lib/dates";
 import { fmt } from "@/lib/money";
 import { AppShell, PageHead } from "@/components/AppShell";
 import { MonthNav } from "@/components/MonthNav";
@@ -42,6 +42,13 @@ export default async function DashboardPage({
           </Link>
         }
       />
+
+      {isClosedOn(store, today) && (
+        <p className="notice notice-quiet">
+          This store is closed. No deposit is required
+          {store.closedUntil ? ` through ${longDate(store.closedUntil)}` : ""}.
+        </p>
+      )}
 
       {todayCell?.state === "due" && (
         <p className="notice notice-due">

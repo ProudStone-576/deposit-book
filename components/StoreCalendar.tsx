@@ -10,6 +10,7 @@ const CLS: Record<CalendarDay["state"], string> = {
   missed: "day-missed day-flag",
   due: "day-due day-flag",
   off: "day-off",
+  closed: "day-closed",
   future: "",
 };
 
@@ -45,7 +46,9 @@ export function StoreCalendar({
                 ? `${d.ymd}: no deposit filed`
                 : d.state === "due"
                   ? `${d.ymd}: deposit due today`
-                  : `${d.ymd}: no deposit expected`;
+                  : d.state === "closed"
+                    ? `${d.ymd}: store closed, no deposit required`
+                    : `${d.ymd}: no deposit expected`;
 
           const body = (
             <>
@@ -63,6 +66,11 @@ export function StoreCalendar({
               {d.state === "due" && (
                 <span className="text-[0.5625rem] font-bold uppercase leading-none tracking-wide text-due">
                   Due
+                </span>
+              )}
+              {d.state === "closed" && (
+                <span className="text-[0.5625rem] font-bold uppercase leading-none tracking-wide text-ok">
+                  Closed
                 </span>
               )}
               {d.state === "missed" && (

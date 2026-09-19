@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { requireOwner } from "@/lib/auth";
 import { storeMonth } from "@/lib/queries";
 import { prisma } from "@/lib/db";
-import { monthKey, todayYmd } from "@/lib/dates";
+import { isClosedOn, longDate, monthKey, todayYmd } from "@/lib/dates";
 import { fmt } from "@/lib/money";
 import { AppShell, PageHead } from "@/components/AppShell";
 import { MonthNav } from "@/components/MonthNav";
@@ -53,6 +53,14 @@ export default async function OwnerStorePage({
         eyebrow={`Store ${store.storeNumber} · ${store.city}`}
         title={store.name}
       />
+
+      {isClosedOn(store, todayYmd()) && (
+        <p className="notice notice-quiet">
+          Closed. No deposit is required
+          {store.closedUntil ? ` through ${longDate(store.closedUntil)}` : ""}
+          {store.closedFrom ? `, from ${longDate(store.closedFrom)}` : ""}.
+        </p>
+      )}
 
       <div className="grid grid-cols-3 gap-2">
         <Stat label="Month total" value={fmt(summary.totalCents)} tone="accent" />

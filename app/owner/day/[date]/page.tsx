@@ -11,7 +11,8 @@ const STATE_BADGE: Record<string, { text: string; cls: string }> = {
   filed: { text: "Filed", cls: "bg-okbg text-ok" },
   missed: { text: "Missing", cls: "bg-missbg text-miss" },
   due: { text: "Due today", cls: "bg-duebg text-due" },
-  off: { text: "Closed", cls: "bg-surface3 text-ink3" },
+  off: { text: "Not scheduled", cls: "bg-surface3 text-ink3" },
+  closed: { text: "Closed", cls: "bg-okbg text-ok" },
   future: { text: "—", cls: "bg-surface3 text-ink3" },
 };
 

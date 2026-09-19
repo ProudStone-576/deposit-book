@@ -371,6 +371,11 @@ body {
   border-color: color-mix(in srgb, var(--due) 35%, transparent);
   color: var(--due);
 }
+.day-closed {
+  background: var(--ok-bg);
+  border-color: color-mix(in srgb, var(--ok) 28%, transparent);
+  color: var(--ok);
+}
 .day-off {
   background: var(--surface-2);
   border-style: dashed;
