@@ -4,7 +4,16 @@
  *
  *   npm run store:close -- 68295 2026-10-31              # shut from today through Oct 31
  *   npm run store:close -- 68295 2026-10-31 2026-09-20   # shut from Sep 20 through Oct 31
+ *   npm run store:close -- 68295 2026-11-14              # already closed: move the end date only
  *   npm run store:close -- 68295 --open                  # back to the normal schedule now
+ *
+ * With no `from`, a store that already has a closure keeps its start date, so
+ * changing the end date never rewrites the days already closed. Pass `from`
+ * explicitly to start a fresh window instead.
+ *
+ * `--open` ends a closure that has already started as of yesterday rather than
+ * erasing it, so the days it covered stay "closed" instead of turning into
+ * misses. Only a closure that has not started yet is cleared outright.
  *
  * Inside the window no deposit is expected: those days read "no deposit
  * expected" on both calendars and are never counted as missed. The window is
@@ -17,7 +26,7 @@
  * window only ever suppresses the *miss*.
  */
 import { prisma } from "../lib/db";
-import { isYmd, todayYmd } from "../lib/dates";
+import { addDays, isYmd, todayYmd } from "../lib/dates";
 
 async function main() {
   const args = process.argv.slice(2);
@@ -36,10 +45,30 @@ async function main() {
     process.exit(1);
   }
 
+  const today = todayYmd();
+
   if (reopen) {
+    const yesterday = addDays(today, -1);
+    if (!store.closedFrom && !store.closedUntil) {
+      console.log(`${store.storeNumber} — ${store.name} has no closure. Nothing to do.`);
+      await prisma.$disconnect();
+      return;
+    }
+    if (store.closedUntil && store.closedUntil < today) {
+      console.log(
+        `${store.storeNumber} — ${store.name}'s closure already ended ${store.closedUntil}. Nothing to do.`,
+      );
+      await prisma.$disconnect();
+      return;
+    }
+    // A closure that has started keeps its past days: end it yesterday. One
+    // that has not started yet covers no history, so it can simply go.
+    const started = !store.closedFrom || store.closedFrom <= yesterday;
     const updated = await prisma.store.update({
       where: { id: store.id },
-      data: { closedFrom: null, closedUntil: null },
+      data: started
+        ? { closedUntil: yesterday }
+        : { closedFrom: null, closedUntil: null },
     });
     await prisma.auditLog.create({
       data: {
@@ -51,16 +80,22 @@ async function main() {
         detail: JSON.stringify({
           storeNumber,
           was: { closedFrom: store.closedFrom, closedUntil: store.closedUntil },
+          now: { closedFrom: updated.closedFrom, closedUntil: updated.closedUntil },
           via: "store:close",
         }),
       },
     });
     console.log(`${updated.storeNumber} — ${updated.name} is open again, from today.`);
+    if (updated.closedUntil) {
+      console.log(`  Closed days kept on the books: ${updated.closedFrom ?? "(start)"} through ${updated.closedUntil}.`);
+    }
     await prisma.$disconnect();
     return;
   }
 
-  const start = from ?? todayYmd();
+  // Keep an existing window's start unless told otherwise, so moving the end
+  // date cannot un-close days that are already history.
+  const start = from ?? store.closedFrom ?? today;
   if (!isYmd(start) || !isYmd(until)) {
     console.error(`Dates must be YYYY-MM-DD, got "${start}" and "${until}".`);
     process.exit(1);
